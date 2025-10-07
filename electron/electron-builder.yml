@@ -1,0 +1,23 @@
+appId: com.BciGit.app
+productName: BciGit
+files:
+  - dist/**/*
+  - package.json
+  - node_modules/**/*
+directories:
+  output: release
+  buildResources: build
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+win:
+  target:
+    - nsis
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
+extraMetadata:
+  main: dist/electron/main.js

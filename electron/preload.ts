@@ -1,0 +1,110 @@
+import { contextBridge, ipcRenderer } from "electron";
+import type {
+  BackendResponse,
+  BranchInfo,
+  CommitDetails,
+  CommitGraphData,
+  RecentRepository,
+  RepoSummary
+} from "../shared/git.js";
+
+type Response<T> = Promise<BackendResponse<T>>;
+
+const api = {
+  getRecentRepositories(): Response<RecentRepository[]> {
+    return ipcRenderer.invoke("app:get-recents");
+  },
+  openRepositoryDialog(): Response<{ repo: RepoSummary; commits: CommitGraphData; branches: BranchInfo[] }> {
+    return ipcRenderer.invoke("dialog:open-repository");
+  },
+  openRepository(path: string): Response<{ repo: RepoSummary; commits: CommitGraphData; branches: BranchInfo[] }> {
+    return ipcRenderer.invoke("repo:open", path);
+  },
+  getBranches(): Response<BranchInfo[]> {
+    return ipcRenderer.invoke("repo:branches");
+  },
+  getCommitGraph(): Response<CommitGraphData> {
+    return ipcRenderer.invoke("repo:commits");
+  },
+  getCommitDetails(hash: string): Response<CommitDetails> {
+    return ipcRenderer.invoke("repo:commit-details", hash);
+  },
+  getDiff(hash: string, filePath: string): Response<string> {
+    return ipcRenderer.invoke("repo:diff", { hash, filePath });
+  },
+  getWorkingDirStatus(): Response<unknown> {
+    return ipcRenderer.invoke("repo:working-dir-status");
+  },
+  commit(message: string): Response<unknown> {
+    return ipcRenderer.invoke("repo:commit", message);
+  },
+  checkout(branch: string): Response<unknown> {
+    return ipcRenderer.invoke("repo:checkout", branch);
+  },
+  createBranch(name: string, base?: string): Response<unknown> {
+    return ipcRenderer.invoke("repo:create-branch", { name, base });
+  },
+  deleteBranch(name: string, force?: boolean): Response<unknown> {
+    return ipcRenderer.invoke("repo:delete-branch", { name, force });
+  },
+  pull(remote?: string, branch?: string): Response<unknown> {
+    return ipcRenderer.invoke("repo:pull", { remote, branch });
+  },
+  push(remote?: string, branch?: string): Response<unknown> {
+    return ipcRenderer.invoke("repo:push", { remote, branch });
+  },
+  fetch(remote?: string): Response<unknown> {
+    return ipcRenderer.invoke("repo:fetch", remote);
+  },
+  merge(branch: string): Response<unknown> {
+    return ipcRenderer.invoke("repo:merge", branch);
+  },
+  cherryPick(hash: string): Response<unknown> {
+    return ipcRenderer.invoke("repo:cherry-pick", hash);
+  },
+  rebase(onto: string): Response<unknown> {
+    return ipcRenderer.invoke("repo:rebase", onto);
+  },
+  stash(message?: string): Response<unknown> {
+    return ipcRenderer.invoke("repo:stash", message);
+  },
+  stashPop(): Response<unknown> {
+    return ipcRenderer.invoke("repo:stash-pop");
+  },
+  stashList(): Response<unknown> {
+    return ipcRenderer.invoke("repo:stash-list");
+  },
+  stageHunk(filePath: string, hunk: string): Response<unknown> {
+    return ipcRenderer.invoke("repo:stage-hunk", { filePath, hunk });
+  },
+  discardHunk(filePath: string, hunk: string): Response<unknown> {
+    return ipcRenderer.invoke("repo:discard-hunk", { filePath, hunk });
+  },
+  unstageHunk(filePath: string, hunk: string): Response<unknown> {
+    return ipcRenderer.invoke("repo:unstage-hunk", { filePath, hunk });
+  },
+  unstageFile(filePath: string): Response<unknown> {
+    return ipcRenderer.invoke("repo:unstage-file", { filePath });
+  },
+  stageFile(filePath: string): Response<unknown> {
+    return ipcRenderer.invoke("repo:stage-file", { filePath });
+  },
+  minimizeWindow(): Promise<void> {
+    return ipcRenderer.invoke("window:minimize");
+  },
+  maximizeWindow(): Promise<void> {
+    return ipcRenderer.invoke("window:maximize");
+  },
+  closeWindow(): Promise<void> {
+    return ipcRenderer.invoke("window:close");
+  },
+  moveWindow(x: number, y: number): Promise<void> {
+    return ipcRenderer.invoke("window:move", { x, y });
+  }
+};
+
+declare global {
+  interface Window {
+    BciGit: typeof api;
+  }
+}

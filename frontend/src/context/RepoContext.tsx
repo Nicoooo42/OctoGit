@@ -1,0 +1,515 @@
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState
+} from "react";
+import type {
+  BranchInfo,
+  CommitDetails,
+  CommitGraphData,
+  RecentRepository,
+  RepoSummary
+} from "../types/git";
+import { unwrap } from "../utils/ipc";
+
+export type DiffScope = "commit" | "working" | "staged";
+
+type DiffState = {
+  file: string;
+  content: string;
+  scope: DiffScope;
+} | null;
+
+const IPC_UNAVAILABLE_MESSAGE =
+  "L'API BciGit n'est pas disponible. Assurez-vous de lancer l'application via Electron (npm run dev ou npm run build).";
+
+function getBciGitApi() {
+  if (typeof window === "undefined" || !window.BciGit) {
+    throw new Error(IPC_UNAVAILABLE_MESSAGE);
+  }
+  return window.BciGit;
+}
+
+type RepoContextValue = {
+  repo: RepoSummary | null;
+  branches: BranchInfo[];
+  graph: CommitGraphData | null;
+  recents: RecentRepository[];
+  loading: boolean;
+  error: string | null;
+  selectedCommit: string | null;
+  commitDetails: CommitDetails | null;
+  diff: DiffState;
+  workingDirStatus: any;
+  clearError: () => void;
+  fetchRecents: () => Promise<void>;
+  openRepoFromDialog: () => Promise<boolean>;
+  openRepoAtPath: (repoPath: string) => Promise<boolean>;
+  refreshAll: () => Promise<void>;
+  selectCommit: (hash: string | null) => Promise<void>;
+  loadDiff: (filePath: string, options?: { scope?: DiffScope }) => Promise<void>;
+  getWorkingDirStatus: () => Promise<unknown>;
+  commit: (message: string) => Promise<void>;
+  checkout: (branch: string) => Promise<void>;
+  createBranch: (name: string, base?: string) => Promise<void>;
+  deleteBranch: (name: string, force?: boolean) => Promise<void>;
+  pull: (remote?: string, branch?: string) => Promise<void>;
+  push: (remote?: string, branch?: string) => Promise<void>;
+  fetch: (remote?: string) => Promise<void>;
+  merge: (branch: string) => Promise<void>;
+  cherryPick: (hash: string) => Promise<void>;
+  rebase: (onto: string) => Promise<void>;
+  stash: (message?: string) => Promise<void>;
+  stashPop: () => Promise<void>;
+  stashList: () => Promise<unknown>;
+  stageHunk: (filePath: string, hunk: string) => Promise<void>;
+  discardHunk: (filePath: string, hunk: string) => Promise<void>;
+  unstageHunk: (filePath: string, hunk: string) => Promise<void>;
+  unstageFile: (filePath: string) => Promise<void>;
+  stageFile: (filePath: string) => Promise<void>;
+};
+
+const RepoContext = createContext<RepoContextValue | undefined>(undefined);
+
+export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [repo, setRepo] = useState<RepoSummary | null>(null);
+  const [branches, setBranches] = useState<BranchInfo[]>([]);
+  const [graph, setGraph] = useState<CommitGraphData | null>(null);
+  const [recents, setRecents] = useState<RecentRepository[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
+  const [commitDetails, setCommitDetails] = useState<CommitDetails | null>(null);
+  const [diff, setDiff] = useState<DiffState>(null);
+  const [workingDirStatus, setWorkingDirStatus] = useState<any>(null);
+
+  const handleError = useCallback((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    setError(message);
+    console.error(`[BciGit]`, err);
+  }, []);
+
+  const selectCommitInternal = useCallback(
+    async (hash: string | null, updateSelection = true) => {
+      if (!hash) {
+        setSelectedCommit(null);
+        setCommitDetails(null);
+        setDiff(null);
+        return;
+      }
+
+      try {
+  const details = await unwrap(getBciGitApi().getCommitDetails(hash));
+        if (updateSelection) {
+          setSelectedCommit(hash);
+        }
+        setCommitDetails(details);
+        setDiff(null);
+      } catch (err) {
+        handleError(err);
+      }
+    },
+    [handleError]
+  );
+
+  const loadSnapshot = useCallback(
+    async (snapshot: {
+      repo: RepoSummary;
+      commits: CommitGraphData;
+      branches: BranchInfo[];
+    }) => {
+      setRepo(snapshot.repo);
+      setGraph(snapshot.commits);
+      setBranches(snapshot.branches);
+      const initialHash = snapshot.commits.nodes[0]?.hash ?? null;
+      setSelectedCommit(initialHash);
+      if (initialHash) {
+        await selectCommitInternal(initialHash, false);
+      } else {
+        setCommitDetails(null);
+        setDiff(null);
+      }
+    },
+    [selectCommitInternal]
+  );
+
+  const fetchRecents = useCallback(async () => {
+    try {
+  const recentRepos = await unwrap(getBciGitApi().getRecentRepositories());
+      setRecents(recentRepos);
+    } catch (err) {
+      handleError(err);
+    }
+  }, [handleError]);
+
+  const selectCommit = useCallback(
+    async (hash: string | null) => {
+      await selectCommitInternal(hash, true);
+    },
+    [selectCommitInternal]
+  );
+
+  const openRepoFromDialog = useCallback(async () => {
+    setLoading(true);
+    try {
+      const snapshot = await unwrap(getBciGitApi().openRepositoryDialog());
+      await loadSnapshot(snapshot);
+      await fetchRecents();
+      return true;
+    } catch (err) {
+      handleError(err);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchRecents, handleError, loadSnapshot]);
+
+  const openRepoAtPath = useCallback(
+    async (repoPath: string) => {
+      setLoading(true);
+      try {
+        const snapshot = await unwrap(getBciGitApi().openRepository(repoPath));
+        await loadSnapshot(snapshot);
+        await fetchRecents();
+        return true;
+      } catch (err) {
+        handleError(err);
+        return false;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [fetchRecents, handleError, loadSnapshot]
+  );
+
+  const refreshAll = useCallback(async () => {
+    if (!repo) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const [branchesData, graphData, workingDirData] = await Promise.all([
+        unwrap(getBciGitApi().getBranches()),
+        unwrap(getBciGitApi().getCommitGraph()),
+        unwrap(getBciGitApi().getWorkingDirStatus())
+      ]);
+      setBranches(branchesData);
+      setGraph(graphData);
+      setWorkingDirStatus(workingDirData);
+      if (selectedCommit) {
+        await selectCommitInternal(selectedCommit);
+      }
+    } catch (err) {
+      handleError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [handleError, repo, selectCommitInternal, selectedCommit]);
+
+  const loadDiff = useCallback(
+    async (filePath: string, options?: { scope?: DiffScope }) => {
+      const scope = options?.scope ?? (selectedCommit === "working-directory" ? "working" : "commit");
+
+      let ref: string | null = null;
+      switch (scope) {
+        case "working":
+          ref = "working-directory";
+          break;
+        case "staged":
+          ref = "staged";
+          break;
+        case "commit":
+        default:
+          ref = selectedCommit && selectedCommit !== "working-directory" ? selectedCommit : null;
+          break;
+      }
+
+      if (!ref) return;
+      try {
+        const diffText = await unwrap(getBciGitApi().getDiff(ref, filePath));
+        setDiff({ file: filePath, content: diffText, scope });
+      } catch (err) {
+        handleError(err);
+      }
+    },
+    [handleError, selectedCommit]
+  );
+
+  const getWorkingDirStatus = useCallback(
+    async () => {
+      return unwrap(getBciGitApi().getWorkingDirStatus());
+    },
+    []
+  );
+
+  const gitAction = useCallback(
+    async (action: () => Promise<unknown>) => {
+      setLoading(true);
+      try {
+        await action();
+        await refreshAll();
+      } catch (err) {
+        handleError(err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [handleError, refreshAll]
+  );
+
+  const commit = useCallback(
+    async (message: string) => {
+      await gitAction(async () => unwrap(getBciGitApi().commit(message)));
+    },
+    [gitAction]
+  );
+
+  const checkout = useCallback(
+    async (branch: string) => {
+      await gitAction(async () => unwrap(getBciGitApi().checkout(branch)));
+    },
+    [gitAction]
+  );
+
+  const createBranch = useCallback(
+    async (name: string, base?: string) => {
+      await gitAction(async () => unwrap(getBciGitApi().createBranch(name, base)));
+    },
+    [gitAction]
+  );
+
+  const deleteBranch = useCallback(
+    async (name: string, force = false) => {
+      await gitAction(async () => unwrap(getBciGitApi().deleteBranch(name, force)));
+    },
+    [gitAction]
+  );
+
+  const pull = useCallback(
+    async (remote?: string, branch?: string) => {
+      await gitAction(async () => unwrap(getBciGitApi().pull(remote, branch)));
+    },
+    [gitAction]
+  );
+
+  const push = useCallback(
+    async (remote?: string, branch?: string) => {
+      await gitAction(async () => unwrap(getBciGitApi().push(remote, branch)));
+    },
+    [gitAction]
+  );
+
+  const fetch = useCallback(
+    async (remote?: string) => {
+      await gitAction(async () => unwrap(getBciGitApi().fetch(remote)));
+    },
+    [gitAction]
+  );
+
+  const merge = useCallback(
+    async (branch: string) => {
+      await gitAction(async () => unwrap(getBciGitApi().merge(branch)));
+    },
+    [gitAction]
+  );
+
+  const cherryPick = useCallback(
+    async (hash: string) => {
+      await gitAction(async () => unwrap(getBciGitApi().cherryPick(hash)));
+    },
+    [gitAction]
+  );
+
+  const rebase = useCallback(
+    async (onto: string) => {
+      await gitAction(async () => unwrap(getBciGitApi().rebase(onto)));
+    },
+    [gitAction]
+  );
+
+  const stash = useCallback(
+    async (message?: string) => {
+      await gitAction(async () => unwrap(getBciGitApi().stash(message)));
+    },
+    [gitAction]
+  );
+
+  const stashPop = useCallback(
+    async () => {
+      await gitAction(async () => unwrap(getBciGitApi().stashPop()));
+    },
+    [gitAction]
+  );
+
+  const stashList = useCallback(
+    async () => {
+      return unwrap(getBciGitApi().stashList());
+    },
+    []
+  );
+
+  const stageHunk = useCallback(
+    async (filePath: string, hunk: string) => {
+      return gitAction(() => unwrap(getBciGitApi().stageHunk(filePath, hunk)));
+    },
+    []
+  );
+
+  const discardHunk = useCallback(
+    async (filePath: string, hunk: string) => {
+      return gitAction(() => unwrap(getBciGitApi().discardHunk(filePath, hunk)));
+    },
+    []
+  );
+
+  const unstageHunk = useCallback(
+    async (filePath: string, hunk: string) => {
+      return gitAction(() => unwrap(getBciGitApi().unstageHunk(filePath, hunk)));
+    },
+    []
+  );
+
+  const unstageFile = useCallback(
+    async (filePath: string) => {
+      return gitAction(() => unwrap(getBciGitApi().unstageFile(filePath)));
+    },
+    []
+  );
+
+  const stageFile = useCallback(
+    async (filePath: string) => {
+      return gitAction(() => unwrap(getBciGitApi().stageFile(filePath)));
+    },
+    []
+  );
+
+  const clearError = useCallback(() => setError(null), []);
+
+  useEffect(() => {
+    if (!repo) {
+      return;
+    }
+
+    let cancelled = false;
+    let timeoutId: number | undefined;
+    const POLL_INTERVAL_MS = 4000;
+
+    const pollWorkingDirStatus = async () => {
+      try {
+        const status = await unwrap(getBciGitApi().getWorkingDirStatus());
+        if (!cancelled) {
+          setWorkingDirStatus(status);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("[BciGit]", err);
+        }
+      } finally {
+        if (!cancelled) {
+          timeoutId = window.setTimeout(pollWorkingDirStatus, POLL_INTERVAL_MS);
+        }
+      }
+    };
+
+    pollWorkingDirStatus();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [repo]);
+
+  const value = useMemo<RepoContextValue>(
+    () => ({
+      repo,
+      branches,
+      graph,
+      recents,
+      loading,
+      error,
+      selectedCommit,
+      commitDetails,
+      diff,
+      workingDirStatus,
+      clearError,
+      fetchRecents,
+      openRepoFromDialog,
+      openRepoAtPath,
+      refreshAll,
+      selectCommit,
+      loadDiff,
+      getWorkingDirStatus,
+      commit,
+      checkout,
+      createBranch,
+      deleteBranch,
+      pull,
+      push,
+      fetch,
+      merge,
+      cherryPick,
+      rebase,
+      stash,
+      stashPop,
+      stashList,
+      stageHunk,
+      discardHunk,
+      unstageHunk,
+      unstageFile,
+      stageFile
+    }),
+    [
+      branches,
+      checkout,
+      commit,
+      commitDetails,
+      createBranch,
+      deleteBranch,
+      diff,
+      workingDirStatus,
+      error,
+      fetch,
+      fetchRecents,
+      graph,
+  cherryPick,
+      loadDiff,
+      getWorkingDirStatus,
+      loading,
+      merge,
+      openRepoAtPath,
+      openRepoFromDialog,
+  rebase,
+      pull,
+      push,
+      recents,
+      refreshAll,
+      repo,
+      selectCommit,
+      selectedCommit,
+      clearError,
+      stash,
+      stashPop,
+      stashList,
+      stageHunk,
+      discardHunk,
+      unstageHunk,
+      unstageFile,
+      stageFile
+    ]
+  );
+
+  return <RepoContext.Provider value={value}>{children}</RepoContext.Provider>;
+};
+
+export function useRepoContext(): RepoContextValue {
+  const context = useContext(RepoContext);
+  if (!context) {
+    throw new Error("useRepoContext doit être utilisé dans un RepoProvider");
+  }
+  return context;
+}

@@ -1,0 +1,23 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "../dist/electron",
+    "rootDir": "./",
+    "baseUrl": "./",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "composite": true,
+    "types": ["node", "electron"]
+  },
+  "include": ["./**/*.ts", "./**/*.cts"],
+  "references": [
+    { "path": "../shared" },
+    { "path": "../backend" }
+  ]
+}
