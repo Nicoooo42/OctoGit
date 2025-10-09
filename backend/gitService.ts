@@ -119,6 +119,8 @@ export class GitService {
   async getCommitGraph(limit = 150): Promise<CommitGraphData> {
     const git = this.ensureRepo();
 
+    console.log(`[GitService] Building commit graph with limit ${limit}`);
+
     const logRaw = await git.raw([
       "log",
       "--all",
@@ -132,6 +134,8 @@ export class GitService {
     const links: CommitLink[] = [];
 
     const branchAssignments = await this.getBranches();
+    console.log(`[GitService] Found ${branchAssignments.length} branches`);
+
     const branchLaneMap = new Map<string, number>();
 
     branchAssignments.forEach((branch, index) => {
@@ -139,8 +143,12 @@ export class GitService {
       this.branchColorMap.set(branch.name, branch.color);
     });
 
+    console.log(`[GitService] Branch lane map:`, Object.fromEntries(branchLaneMap));
+    console.log(`[GitService] Branch color map:`, Object.fromEntries(this.branchColorMap));
+
   const lines = logRaw.split("\n").filter(Boolean);
   const commitLaneMap = new Map<string, number>();
+  const commitColorMap = new Map<string, string>();
   let nextLane = branchAssignments.length;
 
   lines.forEach((line: string) => {
@@ -154,13 +162,34 @@ export class GitService {
             .map((ref: string) => ref.replace(/^HEAD ->\s*/, ""))
         : [];
 
-      let lane = this.pickLane(refs, branchLaneMap, commitLaneMap, nextLane);
+      let lane = commitLaneMap.get(hash) ?? this.pickLane(refs, branchLaneMap, commitLaneMap, nextLane);
       if (lane === nextLane) {
         nextLane += 1;
       }
       commitLaneMap.set(hash, lane);
 
-      const color = this.resolveCommitColor(refs, lane);
+      console.log(`[GitService] Commit ${hash.substring(0,7)} assigned lane ${lane}, refs: ${refs.join(', ')}`);
+
+      // Propagate lane to parents if they don't have one yet
+      parents.forEach((parentHash: string) => {
+        if (!commitLaneMap.has(parentHash)) {
+          commitLaneMap.set(parentHash, lane);
+          console.log(`[GitService] Propagated lane ${lane} to parent ${parentHash.substring(0,7)}`);
+        }
+      });
+
+      const existingColor = commitColorMap.get(hash);
+      const color = existingColor || this.resolveCommitColor(refs, lane);
+
+      commitColorMap.set(hash, color);
+
+      // Propagate color to parents if they don't have one yet
+      parents.forEach((parentHash: string) => {
+        if (!commitColorMap.has(parentHash)) {
+          commitColorMap.set(parentHash, color);
+          console.log(`[GitService] Propagated color ${color} to parent ${parentHash.substring(0,7)}`);
+        }
+      });
 
       nodes.push({
         hash,
@@ -393,15 +422,34 @@ export class GitService {
     return git.add(filePath);
   }
 
+  async getGitConfig(key: string): Promise<string> {
+    const git = this.ensureRepo();
+    try {
+      const value = await git.raw(['config', '--get', key]);
+      return value.trim();
+    } catch (error) {
+      return '';
+    }
+  }
+
+  async setGitConfig(key: string, value: string, global = false): Promise<void> {
+    const git = this.ensureRepo();
+    const scope = global ? '--global' : '--local';
+    await git.raw(['config', scope, key, value]);
+  }
+
   private pickLane(
     refs: string[],
     branchLaneMap: Map<string, number>,
     commitLaneMap: Map<string, number>,
     nextLane: number
   ) {
+    console.log(`[GitService] pickLane called with refs: ${refs.join(', ')}, nextLane: ${nextLane}`);
+
     for (const ref of refs) {
       const lane = branchLaneMap.get(ref);
       if (typeof lane === "number") {
+        console.log(`[GitService] Found existing lane ${lane} for ref ${ref}`);
         return lane;
       }
     }
@@ -409,14 +457,18 @@ export class GitService {
     for (const ref of refs) {
       if (!branchLaneMap.has(ref)) {
         branchLaneMap.set(ref, nextLane);
+        console.log(`[GitService] Assigned new lane ${nextLane} for ref ${ref}`);
         return nextLane;
       }
     }
 
     if (refs.length) {
-      return branchLaneMap.get(refs[0]) ?? 0;
+      const lane = branchLaneMap.get(refs[0]) ?? 0;
+      console.log(`[GitService] Using existing lane ${lane} for ref ${refs[0]}`);
+      return lane;
     }
 
+    console.log(`[GitService] Using nextLane ${nextLane} for commit without refs`);
     return nextLane;
   }
 
@@ -441,5 +493,23 @@ export class GitService {
     const color = COLOR_PALETTE[fallbackIndex % COLOR_PALETTE.length];
     this.branchColorMap.set(branchName, color);
     return color;
+  }
+
+  async cloneRepository(repoUrl: string, localPath: string): Promise<void> {
+    const normalized = path.resolve(localPath);
+    
+    // Vérifier que le dossier n'existe pas déjà
+    if (fs.existsSync(normalized)) {
+      throw new Error(`Le dossier ${normalized} existe déjà. Veuillez choisir un autre emplacement.`);
+    }
+
+    // Créer le dossier parent si nécessaire
+    const parentDir = path.dirname(normalized);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true });
+    }
+
+    // Cloner le dépôt
+    await simpleGit().clone(repoUrl, normalized);
   }
 }

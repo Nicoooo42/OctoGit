@@ -5,6 +5,7 @@ import TitleBar from "./components/TitleBar";
 import Home from "./pages/Home";
 import RepoView from "./pages/RepoView";
 import DiffView from "./pages/DiffView";
+import Config from "./pages/Config";
 
 const App: React.FC = () => {
   return (
@@ -16,6 +17,7 @@ const App: React.FC = () => {
             <Route path="/" element={<Home />} />
             <Route path="/repo" element={<RepoView />} />
             <Route path="/repo/diff/:commitHash" element={<DiffView />} />
+            <Route path="/config" element={<Config />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>

@@ -1,11 +1,16 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FolderOpen, GitBranch } from "lucide-react";
+import { FolderOpen, GitBranch, Download } from "lucide-react";
 import { useRepoContext } from "../context/RepoContext";
 
 const Home: React.FC = () => {
   const navigate = useNavigate();
   const { recents, fetchRecents, openRepoFromDialog, openRepoAtPath, loading, error, clearError } = useRepoContext();
+  const [showCloneModal, setShowCloneModal] = useState(false);
+  const [cloneUrl, setCloneUrl] = useState("");
+  const [clonePath, setClonePath] = useState("");
+  const [cloneLoading, setCloneLoading] = useState(false);
+  const [cloneError, setCloneError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchRecents();
@@ -33,6 +38,35 @@ const Home: React.FC = () => {
     }
   };
 
+  const handleClone = async () => {
+    if (!cloneUrl.trim() || !clonePath.trim()) {
+      setCloneError("Veuillez renseigner l'URL et le chemin de destination.");
+      return;
+    }
+
+    setCloneLoading(true);
+    setCloneError(null);
+    try {
+      if (!window.BciGit) {
+        throw new Error("API non disponible");
+      }
+      const result = await window.BciGit.cloneRepository(cloneUrl, clonePath);
+      if (result.success) {
+        setShowCloneModal(false);
+        setCloneUrl("");
+        setClonePath("");
+        navigate("/repo");
+      } else {
+        setCloneError(result.error || "Erreur lors du clone");
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Erreur lors du clone";
+      setCloneError(message);
+    } finally {
+      setCloneLoading(false);
+    }
+  };
+
   return (
     <div className="flex h-full items-center justify-center bg-slate-900">
       <div className="w-full max-w-2xl rounded-3xl border border-slate-800 bg-slate-850/60 p-10 shadow-xl backdrop-blur">
@@ -55,6 +89,16 @@ const Home: React.FC = () => {
           >
             <FolderOpen className="h-5 w-5" />
             Ouvrir un dépôt
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowCloneModal(true)}
+            disabled={loading}
+            className="flex items-center justify-center gap-3 rounded-xl bg-orange-500/20 py-3 text-orange-300 transition hover:bg-orange-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Download className="h-5 w-5" />
+            Cloner un dépôt
           </button>
 
           <div>
@@ -93,6 +137,76 @@ const Home: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal de clone */}
+      {showCloneModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div className="w-full max-w-lg rounded-xl bg-slate-800 p-6 shadow-2xl">
+            <h2 className="text-xl font-bold mb-4 text-cyan-300">Cloner un dépôt Git</h2>
+            
+            <div className="mb-4">
+              <label htmlFor="cloneUrl" className="block mb-1 text-sm font-medium">
+                URL du dépôt
+              </label>
+              <input
+                id="cloneUrl"
+                type="text"
+                value={cloneUrl}
+                onChange={(e) => setCloneUrl(e.target.value)}
+                placeholder="https://gitlab.com/user/repo.git"
+                className="w-full border border-slate-600 bg-slate-900 rounded px-3 py-2 text-slate-100"
+              />
+            </div>
+
+            <div className="mb-4">
+              <label htmlFor="clonePath" className="block mb-1 text-sm font-medium">
+                Chemin de destination
+              </label>
+              <input
+                id="clonePath"
+                type="text"
+                value={clonePath}
+                onChange={(e) => setClonePath(e.target.value)}
+                placeholder="C:\Users\...\mon-projet"
+                className="w-full border border-slate-600 bg-slate-900 rounded px-3 py-2 text-slate-100"
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                Le dossier sera créé automatiquement
+              </p>
+            </div>
+
+            {cloneError && (
+              <div className="mb-4 p-3 bg-red-900/30 text-red-300 rounded text-sm">
+                {cloneError}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={handleClone}
+                disabled={cloneLoading}
+                className="flex-1 bg-cyan-600 text-white px-4 py-2 rounded hover:bg-cyan-700 disabled:opacity-50"
+              >
+                {cloneLoading ? "Clonage en cours..." : "Cloner"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCloneModal(false);
+                  setCloneError(null);
+                  setCloneUrl("");
+                  setClonePath("");
+                }}
+                disabled={cloneLoading}
+                className="flex-1 bg-slate-700 text-white px-4 py-2 rounded hover:bg-slate-600 disabled:opacity-50"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

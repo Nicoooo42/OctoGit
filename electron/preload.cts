@@ -95,6 +95,36 @@ const api = {
   stageFile(filePath: string): Response<unknown> {
     return ipcRenderer.invoke("repo:stage-file", { filePath });
   },
+  getGitConfig(key: string): Response<string> {
+    return ipcRenderer.invoke("config:get", { key });
+  },
+  setGitConfig(key: string, value: string, global?: boolean): Response<unknown> {
+    return ipcRenderer.invoke("config:set", { key, value, global });
+  },
+  getGitLabConfig(key: string): Response<string> {
+    return ipcRenderer.invoke("gitlab:get-config", { key });
+  },
+  setGitLabConfig(key: string, value: string): Response<unknown> {
+    return ipcRenderer.invoke("gitlab:set-config", { key, value });
+  },
+  clearGitLabConfig(): Response<unknown> {
+    return ipcRenderer.invoke("gitlab:clear-config");
+  },
+  testGitLabConnection(): Response<{ success: boolean; user?: { name: string; username: string; email: string }; error?: string }> {
+    return ipcRenderer.invoke("gitlab:test-connection");
+  },
+  getGitLabProjects(page?: number, perPage?: number): Response<unknown> {
+    return ipcRenderer.invoke("gitlab:get-projects", { page, perPage });
+  },
+  getGitLabMergeRequests(projectId: number, state?: string): Response<unknown> {
+    return ipcRenderer.invoke("gitlab:get-merge-requests", { projectId, state });
+  },
+  createGitLabMergeRequest(projectId: number, sourceBranch: string, targetBranch: string, title: string, description?: string): Response<unknown> {
+    return ipcRenderer.invoke("gitlab:create-merge-request", { projectId, sourceBranch, targetBranch, title, description });
+  },
+  cloneRepository(repoUrl: string, localPath: string): Response<RepoSnapshot> {
+    return ipcRenderer.invoke("repo:clone", { repoUrl, localPath });
+  },
   minimizeWindow(): Promise<void> {
     return ipcRenderer.invoke("window:minimize");
   },

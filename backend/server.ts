@@ -1,12 +1,18 @@
 import { GitService } from "./gitService.js";
 import { RecentRepoStore } from "./recentRepoStore.js";
+import { GitLabStore } from "./gitlabStore.js";
+import { GitLabService } from "./gitlabService.js";
 
 export class BackendServer {
   private readonly gitService = new GitService();
   private readonly recentRepos: RecentRepoStore;
+  private readonly gitlabStore: GitLabStore;
+  private readonly gitlabService: GitLabService;
 
   constructor(private readonly storageDir: string) {
     this.recentRepos = new RecentRepoStore(storageDir);
+    this.gitlabStore = new GitLabStore(storageDir);
+    this.gitlabService = new GitLabService(this.gitlabStore);
   }
 
   async openRepository(repoPath: string) {
@@ -119,5 +125,53 @@ export class BackendServer {
 
   async stageFile(filePath: string) {
     return this.gitService.stageFile(filePath);
+  }
+
+  async getGitConfig(key: string) {
+    return this.gitService.getGitConfig(key);
+  }
+
+  async setGitConfig(key: string, value: string, global = false) {
+    return this.gitService.setGitConfig(key, value, global);
+  }
+
+  async getGitLabConfig(key: string) {
+    return this.gitlabStore.getConfig(key);
+  }
+
+  async setGitLabConfig(key: string, value: string) {
+    return this.gitlabStore.setConfig(key, value);
+  }
+
+  async clearGitLabConfig() {
+    return this.gitlabStore.clearConfig();
+  }
+
+  async testGitLabConnection() {
+    return this.gitlabService.testConnection();
+  }
+
+  async getGitLabProjects(page = 1, perPage = 20) {
+    return this.gitlabService.getProjects(page, perPage);
+  }
+
+  async getGitLabMergeRequests(projectId: number, state = "opened") {
+    return this.gitlabService.getMergeRequests(projectId, state);
+  }
+
+  async createGitLabMergeRequest(
+    projectId: number,
+    sourceBranch: string,
+    targetBranch: string,
+    title: string,
+    description?: string
+  ) {
+    return this.gitlabService.createMergeRequest(projectId, sourceBranch, targetBranch, title, description);
+  }
+
+  async cloneRepository(repoUrl: string, localPath: string) {
+    await this.gitService.cloneRepository(repoUrl, localPath);
+    // Après le clone, ouvrir le dépôt
+    return this.openRepository(localPath);
   }
 }

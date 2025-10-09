@@ -9,7 +9,7 @@ const CommitDetails: React.FC = () => {
 
   if (selectedCommit === "working-directory") {
     return (
-      <aside className="flex h-full flex-col border-l border-slate-800 bg-slate-850/80 text-sm">
+  <aside className="flex h-full min-h-0 flex-col border-l border-slate-800 bg-slate-850/80 text-sm">
         <header className="border-b border-slate-800 px-6 py-5">
           <div className="text-xs uppercase tracking-wide text-slate-500">État du répertoire de travail</div>
           <h2 className="mt-2 text-lg font-semibold text-slate-100">Changements non validés</h2>
@@ -58,14 +58,14 @@ const CommitDetails: React.FC = () => {
 
   if (!commitDetails) {
     return (
-      <aside className="flex h-full flex-col border-l border-slate-800 bg-slate-850/70 p-6 text-sm text-slate-400">
+  <aside className="flex h-full min-h-0 flex-col border-l border-slate-800 bg-slate-850/70 p-6 text-sm text-slate-400">
         <p>Chargement des détails du commit…</p>
       </aside>
     );
   }
 
   return (
-    <aside className="flex h-full flex-col border-l border-slate-800 bg-slate-850/80 text-sm">
+  <aside className="flex h-full min-h-0 flex-col border-l border-slate-800 bg-slate-850/80 text-sm">
       <header className="border-b border-slate-800 px-6 py-5">
         <div className="text-xs uppercase tracking-wide text-slate-500">Détails du commit</div>
         <h2 className="mt-2 text-lg font-semibold text-slate-100">{commitDetails.message}</h2>

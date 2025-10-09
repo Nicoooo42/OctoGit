@@ -196,6 +196,64 @@ function registerIpcHandlers() {
     async (_event: IpcMainInvokeEvent, payload: { filePath: string }) =>
       buildResponse(backend!.stageFile(payload.filePath))
   );
+
+  ipcMain.handle(
+    "config:get",
+    async (_event: IpcMainInvokeEvent, payload: { key: string }) =>
+      buildResponse(backend!.getGitConfig(payload.key))
+  );
+
+  ipcMain.handle(
+    "config:set",
+    async (_event: IpcMainInvokeEvent, payload: { key: string; value: string; global?: boolean }) =>
+      buildResponse(backend!.setGitConfig(payload.key, payload.value, payload.global))
+  );
+
+  ipcMain.handle(
+    "gitlab:get-config",
+    async (_event: IpcMainInvokeEvent, payload: { key: string }) =>
+      buildResponse(backend!.getGitLabConfig(payload.key))
+  );
+
+  ipcMain.handle(
+    "gitlab:set-config",
+    async (_event: IpcMainInvokeEvent, payload: { key: string; value: string }) =>
+      buildResponse(backend!.setGitLabConfig(payload.key, payload.value))
+  );
+
+  ipcMain.handle(
+    "gitlab:clear-config",
+    async () => buildResponse(backend!.clearGitLabConfig())
+  );
+
+  ipcMain.handle(
+    "gitlab:test-connection",
+    async () => buildResponse(backend!.testGitLabConnection())
+  );
+
+  ipcMain.handle(
+    "gitlab:get-projects",
+    async (_event: IpcMainInvokeEvent, payload: { page?: number; perPage?: number }) =>
+      buildResponse(backend!.getGitLabProjects(payload.page, payload.perPage))
+  );
+
+  ipcMain.handle(
+    "gitlab:get-merge-requests",
+    async (_event: IpcMainInvokeEvent, payload: { projectId: number; state?: string }) =>
+      buildResponse(backend!.getGitLabMergeRequests(payload.projectId, payload.state))
+  );
+
+  ipcMain.handle(
+    "gitlab:create-merge-request",
+    async (_event: IpcMainInvokeEvent, payload: { projectId: number; sourceBranch: string; targetBranch: string; title: string; description?: string }) =>
+      buildResponse(backend!.createGitLabMergeRequest(payload.projectId, payload.sourceBranch, payload.targetBranch, payload.title, payload.description))
+  );
+
+  ipcMain.handle(
+    "repo:clone",
+    async (_event: IpcMainInvokeEvent, payload: { repoUrl: string; localPath: string }) =>
+      buildResponse(backend!.cloneRepository(payload.repoUrl, payload.localPath).then(result => openAndSnapshot(result.path)))
+  );
 }
 
 ipcMain.handle("window:minimize", () => {

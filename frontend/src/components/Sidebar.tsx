@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Archive,
   ArrowDownToLine,
@@ -19,6 +20,7 @@ const SectionHeader: React.FC<{ title: string }> = ({ title }) => (
 );
 
 const Sidebar: React.FC = () => {
+  const navigate = useNavigate();
   const {
     repo,
     branches,
@@ -47,6 +49,10 @@ const Sidebar: React.FC = () => {
 
   const localBranches = useMemo(() => branches.filter((branch) => branch.type === "local"), [branches]);
   const remoteBranches = useMemo(() => branches.filter((branch) => branch.type === "remote"), [branches]);
+
+  const handleGoToConfig = () => {
+    navigate('/config');
+  };
 
   const handleCreateBranch = () => {
     setShowBranchInput(true);
@@ -105,7 +111,16 @@ const Sidebar: React.FC = () => {
   };
 
   return (
-    <aside className="flex h-full flex-col border-r border-slate-800 bg-slate-800/60 text-sm">
+    <aside className="flex h-full min-h-0 flex-col border-r border-slate-800 bg-slate-800/60 text-sm">
+      <div className="px-4 py-3 border-b border-slate-800">
+        <button
+          type="button"
+          onClick={handleGoToConfig}
+          className="block w-full rounded bg-cyan-700/20 text-cyan-300 text-center py-2 mb-2 hover:bg-cyan-700/30 transition"
+        >
+          ⚙️ Config Git
+        </button>
+      </div>
       <div className="border-b border-slate-800 px-4 py-5">
         <div className="text-xs uppercase tracking-wide text-slate-500">Dépôt</div>
         <div className="mt-1 text-sm font-semibold text-slate-100">{repo?.name ?? "Aucun dépôt"}</div>

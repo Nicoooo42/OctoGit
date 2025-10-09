@@ -394,14 +394,14 @@ const CommitGraph: React.FC = () => {
   return (
     <div
       ref={containerCallbackRef}
-      className="relative flex-1 overflow-auto bg-slate-900"
+  className="relative flex-1 overflow-auto bg-slate-900"
       onScroll={handleScroll}
       onContextMenu={(event) => {
         if (!event.defaultPrevented) {
           closeContextMenu();
         }
       }}
-      style={{ width: '100%', height: '100%' }}
+      style={{ width: '100%', height: '100%', maxWidth: '100%' }}
     >
       <svg 
         ref={svgRef} 
