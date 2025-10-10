@@ -49,6 +49,16 @@ const Sidebar: React.FC = () => {
 
   const localBranches = useMemo(() => branches.filter((branch) => branch.type === "local"), [branches]);
   const remoteBranches = useMemo(() => branches.filter((branch) => branch.type === "remote"), [branches]);
+  const stagedFiles = useMemo(() => (workingDirStatus?.files ?? []).filter((file: any) => file.index !== ' '), [workingDirStatus]);
+  const unstagedFiles = useMemo(
+    () => (workingDirStatus?.files ?? []).filter((file: any) => file.working_dir !== ' '),
+    [workingDirStatus]
+  );
+  const partialStagedPaths = useMemo(() => new Set(
+    stagedFiles
+      .filter((file: any) => file.working_dir !== ' ')
+      .map((file: any) => file.path)
+  ), [stagedFiles]);
 
   const handleGoToConfig = () => {
     navigate('/config');
@@ -140,7 +150,7 @@ const Sidebar: React.FC = () => {
         <SidebarButton icon={<Plus className="h-4 w-4" />} onClick={handleCreateBranch} disabled={loading}>
           Branche
         </SidebarButton>
-        <SidebarButton icon={<GitCommit className="h-4 w-4" />} onClick={handleCommit} disabled={loading || !workingDirStatus || workingDirStatus.files.filter((f: any) => f.index !== ' ').length === 0}>
+        <SidebarButton icon={<GitCommit className="h-4 w-4" />} onClick={handleCommit} disabled={loading || !workingDirStatus || stagedFiles.length === 0}>
           Commit
         </SidebarButton>
         <SidebarButton icon={<Archive className="h-4 w-4" />} onClick={handleStash} disabled={loading}>
@@ -163,14 +173,19 @@ const Sidebar: React.FC = () => {
         </div>
         {workingDirStatus ? (
           <>
-            {workingDirStatus.files.filter((f: any) => f.index !== ' ').length > 0 && (
+            {stagedFiles.length > 0 && (
               <div className="mb-3">
                 <div className="text-xs font-medium text-emerald-300 mb-2">Staged</div>
                 <div className="space-y-1">
-                  {workingDirStatus.files.filter((f: any) => f.index !== ' ').map((file: any) => (
-                    <div key={file.path} className="flex items-center gap-2 text-xs text-slate-300 group">
+                  {stagedFiles.map((file: any) => (
+                    <div key={`${file.path}-staged`} className="flex items-center gap-2 text-xs text-slate-300 group">
                       <File className="h-3 w-3 text-emerald-400" />
-                      <span className="truncate flex-1">{file.path}</span>
+                      <span className="truncate flex-1 flex items-center gap-2">
+                        {file.path}
+                        {partialStagedPaths.has(file.path) && (
+                          <span className="rounded bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase text-amber-200">Partiel</span>
+                        )}
+                      </span>
                       <button
                         onClick={() => unstageFile(file.path)}
                         className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-slate-200"
@@ -183,18 +198,23 @@ const Sidebar: React.FC = () => {
                 </div>
               </div>
             )}
-            {workingDirStatus.files.filter((f: any) => f.working_dir !== ' ' && f.index === ' ').length > 0 && (
+            {unstagedFiles.length > 0 && (
               <div className="mb-3">
                 <div className="text-xs font-medium text-amber-300 mb-2">Modifiés (unstaged)</div>
                 <div className="space-y-1">
-                  {workingDirStatus.files.filter((f: any) => f.working_dir !== ' ' && f.index === ' ').map((file: any) => (
-                    <div key={file.path} className="flex items-center gap-2 text-xs text-slate-300 group">
+                  {unstagedFiles.map((file: any) => (
+                    <div key={`${file.path}-unstaged`} className="flex items-center gap-2 text-xs text-slate-300 group">
                       <File className="h-3 w-3 text-amber-400" />
-                      <span className="truncate flex-1">{file.path}</span>
+                      <span className="truncate flex-1 flex items-center gap-2">
+                        {file.path}
+                        {partialStagedPaths.has(file.path) && (
+                          <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase text-emerald-200">Partiel</span>
+                        )}
+                      </span>
                       <button
                         onClick={() => stageFile(file.path)}
                         className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-slate-200"
-                        title="Stage file"
+                        title={partialStagedPaths.has(file.path) ? "Stage remaining changes" : "Stage file"}
                       >
                         <ArrowUpFromLine className="h-3 w-3" />
                       </button>
@@ -216,7 +236,7 @@ const Sidebar: React.FC = () => {
                 </div>
               </div>
             )}
-            {workingDirStatus.files.filter((f: any) => f.index !== ' ').length === 0 && workingDirStatus.files.filter((f: any) => f.working_dir !== ' ' && f.index === ' ').length === 0 && (workingDirStatus.not_added || []).length === 0 && (
+            {stagedFiles.length === 0 && unstagedFiles.length === 0 && (workingDirStatus.not_added || []).length === 0 && (
               <div className="text-xs text-slate-500">Aucun changement</div>
             )}
           </>

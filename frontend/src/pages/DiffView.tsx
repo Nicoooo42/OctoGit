@@ -49,6 +49,18 @@ const DiffView: React.FC = () => {
   const effectiveScope: DiffScope = isWorkingDirectory
     ? requestedScope ?? "working"
     : "commit";
+  const stagedFiles = useMemo(
+    () => (workingDirStatus?.files ?? []).filter((file: any) => file.index !== ' '),
+    [workingDirStatus]
+  );
+  const unstagedFiles = useMemo(
+    () => (workingDirStatus?.files ?? []).filter((file: any) => file.working_dir !== ' '),
+    [workingDirStatus]
+  );
+  const partialStagedPaths = useMemo(
+    () => new Set(stagedFiles.filter((file: any) => file.working_dir !== ' ').map((file: any) => file.path)),
+    [stagedFiles]
+  );
 
   useEffect(() => {
     if (!repo) {
@@ -115,7 +127,7 @@ const DiffView: React.FC = () => {
             <ArrowLeft className="h-4 w-4" />
             Retour au dépôt
           </button>
-          {isWorkingDirectory && workingDirStatus && workingDirStatus.files.filter((f: any) => f.index !== ' ').length > 0 && (
+          {isWorkingDirectory && stagedFiles.length > 0 && (
             <button
               type="button"
               onClick={handleCommit}
@@ -177,15 +189,15 @@ const DiffView: React.FC = () => {
             )}
             {isWorkingDirectory && workingDirStatus ? (
               <>
-                {workingDirStatus.files.filter((f: any) => f.index !== ' ').length > 0 && (
+                {stagedFiles.length > 0 && (
                   <div className="mb-3">
                     <div className="text-xs font-medium text-emerald-300 mb-2">Staged</div>
                     <div className="space-y-1">
-                      {workingDirStatus.files.filter((f: any) => f.index !== ' ').map((file: any) => {
+                      {stagedFiles.map((file: any) => {
                         const isActive = isWorkingDirectory && file.path === filePath && effectiveScope === "staged";
                         return (
                           <div
-                            key={file.path}
+                            key={`${file.path}-staged`}
                             onClick={() => navigate({
                               pathname: `/repo/diff/working-directory`,
                               search: `?${createSearchParams({ file: file.path, scope: "staged" })}`
@@ -198,6 +210,9 @@ const DiffView: React.FC = () => {
                           >
                             <span className="flex items-center gap-2">
                               <span className="truncate">{file.path}</span>
+                              {partialStagedPaths.has(file.path) && (
+                                <span className="rounded bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase text-amber-200">Partiel</span>
+                              )}
                             </span>
                             <div className="flex gap-1">
                               <button
@@ -219,15 +234,15 @@ const DiffView: React.FC = () => {
                     </div>
                   </div>
                 )}
-                {workingDirStatus.files.filter((f: any) => f.working_dir !== ' ' && f.index === ' ').length > 0 && (
+                {unstagedFiles.length > 0 && (
                   <div className="mb-3">
                     <div className="text-xs font-medium text-amber-300 mb-2">Modifiés (unstaged)</div>
                     <div className="space-y-1">
-                      {workingDirStatus.files.filter((f: any) => f.working_dir !== ' ' && f.index === ' ').map((file: any) => {
+                      {unstagedFiles.map((file: any) => {
                         const isActive = isWorkingDirectory && file.path === filePath && effectiveScope === "working";
                         return (
                           <div
-                            key={file.path}
+                            key={`${file.path}-unstaged`}
                             onClick={() => navigate({
                               pathname: `/repo/diff/working-directory`,
                               search: `?${createSearchParams({ file: file.path, scope: "working" })}`
@@ -240,6 +255,9 @@ const DiffView: React.FC = () => {
                           >
                             <span className="flex items-center gap-2">
                               <span className="truncate">{file.path}</span>
+                              {partialStagedPaths.has(file.path) && (
+                                <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase text-emerald-200">Partiel</span>
+                              )}
                             </span>
                             <div className="flex gap-1">
                               <button
@@ -251,7 +269,7 @@ const DiffView: React.FC = () => {
                                 }}
                                 className="rounded border border-emerald-600/40 bg-emerald-600/10 px-2 py-1 text-[10px] text-emerald-200 transition hover:bg-emerald-600/20"
                               >
-                                Stage
+                                {partialStagedPaths.has(file.path) ? "Stage rest" : "Stage"}
                               </button>
                               <FileDiff className="h-4 w-4 text-slate-500" />
                             </div>
@@ -273,7 +291,7 @@ const DiffView: React.FC = () => {
                     </div>
                   </div>
                 )}
-                {workingDirStatus.files.filter((f: any) => f.index !== ' ').length === 0 && workingDirStatus.files.filter((f: any) => f.working_dir !== ' ' && f.index === ' ').length === 0 && (workingDirStatus.not_added || []).length === 0 && (
+                {stagedFiles.length === 0 && unstagedFiles.length === 0 && (workingDirStatus.not_added || []).length === 0 && (
                   <div className="text-xs text-slate-500">Aucun changement</div>
                 )}
               </>
