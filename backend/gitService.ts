@@ -211,10 +211,12 @@ export class GitService {
       });
     });
 
+    // Get HEAD commit hash
+    const headHash = (await git.revparse(["HEAD"])).trim();
+
     // Add working directory node if there are uncommitted changes
     const status = await git.status();
     if (!status.isClean()) {
-      const headHash = nodes[0]?.hash;
       if (headHash) {
         const wdNode: CommitNode = {
           hash: "working-directory",
@@ -235,7 +237,7 @@ export class GitService {
       }
     }
 
-    return { nodes, links };
+    return { nodes, links, head: headHash };
   }
 
   async getCommitDetails(hash: string): Promise<CommitDetails> {
@@ -287,15 +289,16 @@ export class GitService {
 
   async getDiff(hash: string, filePath: string): Promise<string> {
     const git = this.ensureRepo();
+    const relativeFilePath = path.relative(this.repoPath!, path.resolve(this.repoPath!, filePath));
     if (hash === "working-directory") {
-      const diff = await git.raw(["diff", "--color=never", "--", filePath]);
+      const diff = await git.raw(["diff", "--color=never", "--", relativeFilePath]);
       return diff;
     }
     if (hash === "staged") {
-      const diff = await git.raw(["diff", "--cached", "--color=never", "--", filePath]);
+      const diff = await git.raw(["diff", "--cached", "--color=never", "--", relativeFilePath]);
       return diff;
     }
-    const diff = await git.raw(["diff", "--color=never", `${hash}^!`, "--", filePath]);
+    const diff = await git.raw(["diff", "--color=never", `${hash}^!`, "--", relativeFilePath]);
     return diff;
   }
 
@@ -359,6 +362,33 @@ export class GitService {
   async rebase(onto: string) {
     const git = this.ensureRepo();
     await git.raw(["rebase", onto]);
+  }
+
+  async squashCommits(commits: string[], message: string) {
+    const git = this.ensureRepo();
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage) {
+      throw new Error("Le message du commit résultant ne peut pas être vide.");
+    }
+
+    const { commits: normalized, base } = await this.normalizeRewriteSelection(commits);
+    if (normalized.length < 2) {
+      throw new Error("Sélectionnez au moins deux commits pour réaliser un squash.");
+    }
+
+    await git.reset(["--soft", base]);
+    await git.commit(trimmedMessage);
+  }
+
+  async dropCommits(commits: string[]) {
+    const git = this.ensureRepo();
+    const { commits: normalized, base } = await this.normalizeRewriteSelection(commits);
+
+    if (normalized.length === 0) {
+      throw new Error("Aucun commit valide n'a été fourni pour suppression.");
+    }
+
+    await git.reset(["--hard", base]);
   }
 
   async stash(message?: string) {
@@ -436,6 +466,57 @@ export class GitService {
     const git = this.ensureRepo();
     const scope = global ? '--global' : '--local';
     await git.raw(['config', scope, key, value]);
+  }
+
+  private async normalizeRewriteSelection(commits: string[]): Promise<{ commits: string[]; base: string }> {
+    const git = this.ensureRepo();
+    const filtered = commits.filter((hash) => hash && hash !== "working-directory");
+
+    if (filtered.length === 0) {
+      throw new Error("Aucun commit valide sélectionné.");
+    }
+
+    const normalized = Array.from(new Set(filtered));
+
+    const status = await git.status();
+    if (!status.isClean()) {
+      throw new Error("Le répertoire de travail doit être propre avant de réécrire l'historique.");
+    }
+
+    const head = (await git.revparse(["HEAD"])).trim();
+    if (!normalized.includes(head)) {
+      throw new Error("La sélection doit inclure le commit HEAD (le plus récent).");
+    }
+
+    const selected = new Set(normalized);
+    const ordered: string[] = [];
+    let current: string | null = head;
+    let base: string | null = null;
+
+    while (current && selected.has(current)) {
+      ordered.push(current);
+      selected.delete(current);
+
+  const parentsRaw: string = await git.raw(["rev-list", "--parents", "-n", "1", current]);
+  const parts: string[] = parentsRaw.trim().split(" ");
+      if (parts[0] !== current) {
+        throw new Error(`Impossible de lire les parents du commit ${current.substring(0, 7)}.`);
+      }
+
+  const firstParent: string | null = parts[1] ?? null;
+      current = firstParent;
+      base = firstParent;
+    }
+
+    if (selected.size > 0) {
+      throw new Error("Les commits sélectionnés doivent être contigus sur la même branche (first-parent).");
+    }
+
+    if (!base) {
+      throw new Error("Impossible de réécrire le commit initial du dépôt.");
+    }
+
+    return { commits: ordered, base };
   }
 
   private pickLane(

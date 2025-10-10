@@ -71,6 +71,12 @@ const api = {
   rebase(onto: string): Response<unknown> {
     return ipcRenderer.invoke("repo:rebase", onto);
   },
+  squashCommits(commits: string[], message: string): Response<unknown> {
+    return ipcRenderer.invoke("repo:squash-commits", { commits, message });
+  },
+  dropCommits(commits: string[]): Response<unknown> {
+    return ipcRenderer.invoke("repo:drop-commits", { commits });
+  },
   stash(message?: string): Response<unknown> {
     return ipcRenderer.invoke("repo:stash", message);
   },

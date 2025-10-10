@@ -95,6 +95,14 @@ export class BackendServer {
     return this.gitService.rebase(onto);
   }
 
+  async squashCommits(commits: string[], message: string) {
+    return this.gitService.squashCommits(commits, message);
+  }
+
+  async dropCommits(commits: string[]) {
+    return this.gitService.dropCommits(commits);
+  }
+
   async stash(message?: string) {
     return this.gitService.stash(message);
   }

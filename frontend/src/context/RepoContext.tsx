@@ -41,6 +41,7 @@ type RepoContextValue = {
   loading: boolean;
   error: string | null;
   selectedCommit: string | null;
+  selectedCommits: string[];
   commitDetails: CommitDetails | null;
   diff: DiffState;
   workingDirStatus: any;
@@ -49,7 +50,8 @@ type RepoContextValue = {
   openRepoFromDialog: () => Promise<boolean>;
   openRepoAtPath: (repoPath: string) => Promise<boolean>;
   refreshAll: () => Promise<void>;
-  selectCommit: (hash: string | null) => Promise<void>;
+  selectCommit: (hash: string | null, options?: { preserveMultiSelection?: boolean }) => Promise<void>;
+  setSelectedCommits: (hashes: string[]) => void;
   loadDiff: (filePath: string, options?: { scope?: DiffScope }) => Promise<void>;
   getWorkingDirStatus: () => Promise<unknown>;
   commit: (message: string) => Promise<void>;
@@ -62,6 +64,8 @@ type RepoContextValue = {
   merge: (branch: string) => Promise<void>;
   cherryPick: (hash: string) => Promise<void>;
   rebase: (onto: string) => Promise<void>;
+  squashCommits: (commits: string[], message: string) => Promise<void>;
+  dropCommits: (commits: string[]) => Promise<void>;
   stash: (message?: string) => Promise<void>;
   stashPop: () => Promise<void>;
   stashList: () => Promise<unknown>;
@@ -82,6 +86,7 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
+  const [selectedCommits, setSelectedCommitsState] = useState<string[]>([]);
   const [commitDetails, setCommitDetails] = useState<CommitDetails | null>(null);
   const [diff, setDiff] = useState<DiffState>(null);
   const [workingDirStatus, setWorkingDirStatus] = useState<any>(null);
@@ -126,6 +131,7 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setBranches(snapshot.branches);
       const initialHash = snapshot.commits.nodes[0]?.hash ?? null;
       setSelectedCommit(initialHash);
+      setSelectedCommitsState(initialHash ? [initialHash] : []);
       if (initialHash) {
         await selectCommitInternal(initialHash, false);
       } else {
@@ -146,11 +152,27 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [handleError]);
 
   const selectCommit = useCallback(
-    async (hash: string | null) => {
+    async (hash: string | null, options?: { preserveMultiSelection?: boolean }) => {
+      setSelectedCommitsState((prev) => {
+        if (!hash) {
+          return options?.preserveMultiSelection ? prev : [];
+        }
+
+        if (options?.preserveMultiSelection) {
+          return prev;
+        }
+
+        return [hash];
+      });
+
       await selectCommitInternal(hash, true);
     },
     [selectCommitInternal]
   );
+
+  const setSelectedCommits = useCallback((hashes: string[]) => {
+    setSelectedCommitsState(hashes);
+  }, []);
 
   const openRepoFromDialog = useCallback(async () => {
     setLoading(true);
@@ -330,6 +352,20 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [gitAction]
   );
 
+  const squashCommits = useCallback(
+    async (commits: string[], message: string) => {
+      await gitAction(async () => unwrap(getBciGitApi().squashCommits(commits, message)));
+    },
+    [gitAction]
+  );
+
+  const dropCommits = useCallback(
+    async (commits: string[]) => {
+      await gitAction(async () => unwrap(getBciGitApi().dropCommits(commits)));
+    },
+    [gitAction]
+  );
+
   const stash = useCallback(
     async (message?: string) => {
       await gitAction(async () => unwrap(getBciGitApi().stash(message)));
@@ -433,6 +469,7 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loading,
       error,
       selectedCommit,
+  selectedCommits,
       commitDetails,
       diff,
       workingDirStatus,
@@ -442,6 +479,7 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       openRepoAtPath,
       refreshAll,
       selectCommit,
+  setSelectedCommits,
       loadDiff,
       getWorkingDirStatus,
       commit,
@@ -454,6 +492,8 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       merge,
       cherryPick,
       rebase,
+  squashCommits,
+  dropCommits,
       stash,
       stashPop,
       stashList,
@@ -484,12 +524,17 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       openRepoAtPath,
       openRepoFromDialog,
   rebase,
+  dropCommits,
+  squashCommits,
       pull,
       push,
       recents,
       refreshAll,
       repo,
+  selectedCommits,
       selectCommit,
+  squashCommits,
+  setSelectedCommits,
       selectedCommit,
       clearError,
       stash,

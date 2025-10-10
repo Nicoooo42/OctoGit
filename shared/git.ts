@@ -31,6 +31,7 @@ export interface CommitLink {
 export interface CommitGraphData {
   nodes: CommitNode[];
   links: CommitLink[];
+  head: string;
 }
 
 export interface CommitDetails {

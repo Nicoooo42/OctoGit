@@ -36,6 +36,8 @@ declare global {
       merge(branch: string): Promise<BackendResponse<unknown>>;
       cherryPick(hash: string): Promise<BackendResponse<unknown>>;
       rebase(onto: string): Promise<BackendResponse<unknown>>;
+  squashCommits(commits: string[], message: string): Promise<BackendResponse<unknown>>;
+  dropCommits(commits: string[]): Promise<BackendResponse<unknown>>;
       stash(message?: string): Promise<BackendResponse<unknown>>;
       stashPop(): Promise<BackendResponse<unknown>>;
       stashList(): Promise<BackendResponse<unknown>>;

@@ -10,6 +10,7 @@ BciGit est un client Git multi-plateforme conçu avec Electron, React, TypeScrip
   - Graphe central des commits généré avec D3 (couleurs par branche, transitions fluides, sélection de commit).
   - Détails du commit sélectionné (auteur, date, fichiers modifiés, diff interactif).
 - **Actions Git** : commit, checkout, création/suppression de branches, pull/push/fetch, merge.
+- **Réécriture rapide de l'historique** : multi-sélection dans le graphe (Ctrl/Cmd + clic, Shift pour une plage) avec squash et suppression des commits situés en tête de branche.
 - **IPC Electron sécurisé** via un preload isolé qui expose une API `window.BciGit` fortement typée.
 - **UI moderne et responsive** : thème sombre, TailwindCSS, transitions, icônes Lucide.
 
@@ -68,6 +69,18 @@ Les artefacts seront générés dans `release/` (NSIS pour Windows, DMG pour mac
 - **simple-git** pour orchestrer Git
 - **better-sqlite3** pour le stockage local
 - **Lucide React Icons** pour l'iconographie
+
+## 🧭 Multi-sélection & réécriture
+
+Le graphe de commits permet désormais de sélectionner plusieurs nœuds pour réécrire rapidement l'historique local :
+
+- **Ctrl/Cmd + clic** pour ajouter/retirer un commit de la sélection.
+- **Shift + clic** pour sélectionner un intervalle continu de commits à partir de l'ancre courante.
+- Une barre flottante résume la sélection et propose deux actions :
+  - **Squasher** : fusionne les commits sélectionnés (au moins deux) en un seul commit avec le message de votre choix.
+  - **Supprimer** : supprime les commits sélectionnés du haut de la branche (équivalent à un reset `--hard`).
+
+> ℹ️ Les deux opérations exigent un historique linéaire (first-parent) aboutissant à `HEAD` et un répertoire de travail propre. Elles réécrivent l'historique local ; évitez de les utiliser sur des branches déjà partagées.
 
 ## 📂 Scripts npm
 

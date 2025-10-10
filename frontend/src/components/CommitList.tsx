@@ -3,7 +3,7 @@ import { GitCommit } from "lucide-react";
 import { useRepoContext } from "../context/RepoContext";
 
 const CommitList: React.FC = () => {
-  const { graph, selectedCommit, selectCommit } = useRepoContext();
+  const { graph, selectedCommit, selectedCommits, selectCommit } = useRepoContext();
 
   if (!graph) {
     return null;
@@ -17,6 +17,7 @@ const CommitList: React.FC = () => {
       <div className="space-y-1 px-2 pb-3">
         {graph.nodes.map((node) => {
           const isSelected = node.hash === selectedCommit;
+          const isMultiSelected = selectedCommits.includes(node.hash) && node.hash !== selectedCommit;
           return (
             <button
               key={node.hash}
@@ -25,6 +26,8 @@ const CommitList: React.FC = () => {
               className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition ${
                 isSelected
                   ? "bg-cyan-500/10 text-cyan-100 border border-cyan-500/40"
+                  : isMultiSelected
+                    ? "bg-cyan-500/5 text-slate-100 border border-cyan-500/20"
                   : "bg-slate-800/40 text-slate-200 hover:bg-slate-800/70 border border-transparent"
               }`}
             >

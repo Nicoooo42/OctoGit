@@ -160,6 +160,16 @@ function registerIpcHandlers() {
     async (_event: IpcMainInvokeEvent, onto: string) => buildResponse(backend!.rebase(onto))
   );
   ipcMain.handle(
+    "repo:squash-commits",
+    async (_event: IpcMainInvokeEvent, payload: { commits: string[]; message: string }) =>
+      buildResponse(backend!.squashCommits(payload.commits, payload.message))
+  );
+  ipcMain.handle(
+    "repo:drop-commits",
+    async (_event: IpcMainInvokeEvent, payload: { commits: string[] }) =>
+      buildResponse(backend!.dropCommits(payload.commits))
+  );
+  ipcMain.handle(
     "repo:stash",
     async (_event: IpcMainInvokeEvent, message?: string) => buildResponse(backend!.stash(message))
   );

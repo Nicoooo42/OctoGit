@@ -8,10 +8,12 @@ type DiffLine = {
   type: DiffLineType;
   sign: string;
   content: string;
+  raw: string;
 };
 
 type DiffHunk = {
   header: string;
+  headerRaw: string;
   lines: DiffLine[];
 };
 
@@ -36,11 +38,11 @@ const PROLOGUE_PREFIXES = [
 
 function classifyLine(rawLine: string, context: "prologue" | "hunk"): DiffLine {
   if (rawLine === "") {
-    return { type: "context", sign: " ", content: "" };
+    return { type: "context", sign: " ", content: "", raw: "" };
   }
 
   if (rawLine.startsWith("\\")) {
-    return { type: "meta", sign: " ", content: rawLine };
+    return { type: "meta", sign: " ", content: rawLine, raw: rawLine };
   }
 
   if (context === "prologue") {
@@ -49,23 +51,23 @@ function classifyLine(rawLine: string, context: "prologue" | "hunk"): DiffLine {
       trimmed.startsWith(prefix)
     );
     if (isPrologueMeta) {
-      return { type: "meta", sign: " ", content: rawLine };
+      return { type: "meta", sign: " ", content: rawLine, raw: rawLine };
     }
   }
 
   const indicator = rawLine[0];
   switch (indicator) {
     case "+":
-      return { type: "add", sign: "+", content: rawLine.slice(1) };
+      return { type: "add", sign: "+", content: rawLine.slice(1), raw: rawLine };
     case "-":
-      return { type: "remove", sign: "-", content: rawLine.slice(1) };
+      return { type: "remove", sign: "-", content: rawLine.slice(1), raw: rawLine };
     case " ":
-      return { type: "context", sign: " ", content: rawLine.slice(1) };
+      return { type: "context", sign: " ", content: rawLine.slice(1), raw: rawLine };
     default:
       if (context === "prologue") {
-        return { type: "meta", sign: " ", content: rawLine };
+        return { type: "meta", sign: " ", content: rawLine, raw: rawLine };
       }
-      return { type: "meta", sign: " ", content: rawLine };
+      return { type: "meta", sign: " ", content: rawLine, raw: rawLine };
   }
 }
 
@@ -78,7 +80,9 @@ function parseDiff(diff: string): ParsedDiff {
 
   rawLines.forEach((rawLine) => {
     if (rawLine.startsWith("@@")) {
-      currentHunk = { header: rawLine, lines: [] };
+      const headerRaw = rawLine;
+      const header = rawLine.split(" @@")[0] + " @@";
+      currentHunk = { header, headerRaw, lines: [] };
       hunks.push(currentHunk);
       return;
     }
@@ -158,13 +162,10 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   const { stageHunk, discardHunk, unstageHunk } = useRepoContext();
 
   const getHunkPatch = (prologue: DiffLine[], hunk: DiffHunk): string => {
-    const filteredPrologue = prologue.filter(line => 
-      !line.content.startsWith('diff --git') && 
-      !line.content.startsWith('index ')
-    );
-    const prologueStr = filteredPrologue.map(line => line.content).join('\n');
-    const hunkStr = hunk.header + '\n' + hunk.lines.map(line => line.sign + line.content).join('\n');
-    return prologueStr + '\n' + hunkStr;
+    const prologueLines = prologue.map((line) => line.raw).filter((line) => line !== "");
+    const hunkLines = hunk.lines.map((line) => line.raw);
+    const patchLines = [...prologueLines, hunk.headerRaw, ...hunkLines];
+    return patchLines.join("\n") + "\n";
   };
   const parsed = useMemo(() => parseDiff(diff), [diff]);
   const { prologue, hunks } = parsed;
