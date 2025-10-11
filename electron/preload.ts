@@ -10,14 +10,20 @@ import type {
 
 type Response<T> = Promise<BackendResponse<T>>;
 
+type RepoSnapshot = {
+  repo: RepoSummary;
+  commits: CommitGraphData;
+  branches: BranchInfo[];
+};
+
 const api = {
   getRecentRepositories(): Response<RecentRepository[]> {
     return ipcRenderer.invoke("app:get-recents");
   },
-  openRepositoryDialog(): Response<{ repo: RepoSummary; commits: CommitGraphData; branches: BranchInfo[] }> {
+  openRepositoryDialog(): Response<RepoSnapshot> {
     return ipcRenderer.invoke("dialog:open-repository");
   },
-  openRepository(path: string): Response<{ repo: RepoSummary; commits: CommitGraphData; branches: BranchInfo[] }> {
+  openRepository(path: string): Response<RepoSnapshot> {
     return ipcRenderer.invoke("repo:open", path);
   },
   getBranches(): Response<BranchInfo[]> {
@@ -122,8 +128,20 @@ const api = {
   createGitLabMergeRequest(projectId: number, sourceBranch: string, targetBranch: string, title: string, description?: string): Response<unknown> {
     return ipcRenderer.invoke("gitlab:create-merge-request", { projectId, sourceBranch, targetBranch, title, description });
   },
-  cloneRepository(repoUrl: string, localPath: string): Response<{ repo: RepoSummary; commits: CommitGraphData; branches: BranchInfo[] }> {
+  cloneRepository(repoUrl: string, localPath: string): Response<RepoSnapshot> {
     return ipcRenderer.invoke("repo:clone", { repoUrl, localPath });
+  },
+  getOllamaConfig(key: string): Response<string> {
+    return ipcRenderer.invoke("ollama:get-config", { key });
+  },
+  setOllamaConfig(key: string, value: string): Response<unknown> {
+    return ipcRenderer.invoke("ollama:set-config", { key, value });
+  },
+  clearOllamaConfig(): Response<unknown> {
+    return ipcRenderer.invoke("ollama:clear-config");
+  },
+  generateCommitMessage(): Response<{ title: string; description: string }> {
+    return ipcRenderer.invoke("ollama:generate-commit-message");
   },
   minimizeWindow(): Promise<void> {
     return ipcRenderer.invoke("window:minimize");

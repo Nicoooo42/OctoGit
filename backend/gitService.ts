@@ -116,6 +116,31 @@ export class GitService {
     };
   }
 
+  async getStagedChanges(): Promise<string> {
+    console.log('[GitService] Getting staged changes');
+    const git = this.ensureRepo();
+    const diff = await git.raw(["diff", "--cached", "--color=never"]);
+    console.log('[GitService] Raw diff result length:', diff.length);
+    console.log('[GitService] Diff preview:', diff.substring(0, 200) + (diff.length > 200 ? '...' : ''));
+
+    if (diff.trim()) {
+      console.log('[GitService] Returning diff with length:', diff.length);
+      return diff;
+    }
+
+    // Fallback to status to confirm staged state before returning an empty message
+    const status = await git.status();
+    const hasStagedFiles = status.files.some((file) => file.index !== " ");
+    console.log('[GitService] Status check - has staged files:', hasStagedFiles);
+    console.log('[GitService] Status files:', status.files.map(f => ({ path: f.path, index: f.index, working_dir: f.working_dir })));
+
+    if (!hasStagedFiles) {
+      throw new Error("Aucun fichier n'est actuellement staged.");
+    }
+
+    return diff;
+  }
+
   async getCommitGraph(limit = 150): Promise<CommitGraphData> {
     const git = this.ensureRepo();
 

@@ -131,6 +131,18 @@ const api = {
   cloneRepository(repoUrl: string, localPath: string): Response<RepoSnapshot> {
     return ipcRenderer.invoke("repo:clone", { repoUrl, localPath });
   },
+  getOllamaConfig(key: string): Response<string> {
+    return ipcRenderer.invoke("ollama:get-config", { key });
+  },
+  setOllamaConfig(key: string, value: string): Response<unknown> {
+    return ipcRenderer.invoke("ollama:set-config", { key, value });
+  },
+  clearOllamaConfig(): Response<unknown> {
+    return ipcRenderer.invoke("ollama:clear-config");
+  },
+  generateCommitMessage(): Response<{ title: string; description: string }> {
+    return ipcRenderer.invoke("ollama:generate-commit-message");
+  },
   minimizeWindow(): Promise<void> {
     return ipcRenderer.invoke("window:minimize");
   },

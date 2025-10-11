@@ -16,6 +16,7 @@ import {
 } from "react-router-dom";
 import { useRepoContext, type DiffScope } from "../context/RepoContext";
 import DiffViewer from "../components/DiffViewer";
+import { unwrap } from "../utils/ipc";
 
 const DiffView: React.FC = () => {
   const { commitHash } = useParams<{ commitHash: string }>();
@@ -37,7 +38,11 @@ const DiffView: React.FC = () => {
 
   const filePath = searchParams.get("file") ?? "";
   const [showCommitModal, setShowCommitModal] = useState(false);
-  const [commitMessage, setCommitMessage] = useState('');
+  const [commitTitle, setCommitTitle] = useState('');
+  const [commitDescription, setCommitDescription] = useState('');
+  const [ollamaEnabled, setOllamaEnabled] = useState(false);
+  const [generationLoading, setGenerationLoading] = useState(false);
+  const [generationError, setGenerationError] = useState<string | null>(null);
 
   const isWorkingDirectory = commitHash === "working-directory";
   const scopeParam = searchParams.get("scope");
@@ -69,6 +74,28 @@ const DiffView: React.FC = () => {
   }, [navigate, repo]);
 
   useEffect(() => {
+    if (!showCommitModal) {
+      return;
+    }
+
+    const loadOllamaConfig = async () => {
+      try {
+        if (!window.BciGit) {
+          return;
+        }
+        const result = await window.BciGit.getOllamaConfig("enabled");
+        if (result.success) {
+          setOllamaEnabled(result.data === "true");
+        }
+      } catch (error) {
+        console.error("[DiffView]", error);
+      }
+    };
+
+    void loadOllamaConfig();
+  }, [showCommitModal]);
+
+  useEffect(() => {
     if (commitHash && commitHash !== "working-directory" && commitHash !== selectedCommit) {
       void selectCommit(commitHash);
     }
@@ -88,19 +115,52 @@ const DiffView: React.FC = () => {
   }, [diff, filePath]);
 
   const handleCommit = () => {
+    setGenerationError(null);
+    setGenerationLoading(false);
     setShowCommitModal(true);
   };
 
   const handleConfirmCommit = async () => {
-    if (commitMessage.trim()) {
-      await commit(commitMessage.trim());
-      setCommitMessage('');
+    if (commitTitle.trim()) {
+      await commit(`${commitTitle}\n\n${commitDescription}`.trim());
+      setCommitTitle('');
+      setCommitDescription('');
+      setGenerationError(null);
+      setGenerationLoading(false);
       setShowCommitModal(false);
     }
   };
 
+  const handleGenerateCommitMessage = async () => {
+    console.log('[DiffView] Starting commit message generation');
+    if (!window.BciGit || generationLoading) {
+      console.log('[DiffView] Skipping - no BciGit or already loading:', { hasBciGit: !!window.BciGit, generationLoading });
+      return;
+    }
+
+    setGenerationLoading(true);
+    setGenerationError(null);
+    try {
+      console.log('[DiffView] Calling window.BciGit.generateCommitMessage()');
+      const message = await unwrap(window.BciGit.generateCommitMessage());
+      console.log('[DiffView] Generated message:', message);
+      const { title, description } = message as unknown as { title: string; description: string };
+      setCommitTitle(title);
+      setCommitDescription(description);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[DiffView] Generation error:', message);
+      setGenerationError(message);
+    } finally {
+      setGenerationLoading(false);
+    }
+  };
+
   const handleCancelCommit = () => {
-    setCommitMessage('');
+    setCommitTitle('');
+    setCommitDescription('');
+    setGenerationError(null);
+    setGenerationLoading(false);
     setShowCommitModal(false);
   };
 
@@ -387,13 +447,40 @@ const DiffView: React.FC = () => {
             <p className="mt-2 text-sm text-slate-400">
               Entrez le message de commit pour les fichiers staged.
             </p>
-            <textarea
-              value={commitMessage}
-              onChange={(e) => setCommitMessage(e.target.value)}
-              className="mt-4 w-full rounded border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
-              placeholder="Message de commit..."
-              rows={4}
-            />
+            {ollamaEnabled && (
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <span className="text-xs text-slate-500">Vous pouvez générer une suggestion via Ollama.</span>
+                <button
+                  type="button"
+                  onClick={handleGenerateCommitMessage}
+                  className="rounded border border-emerald-600/40 bg-emerald-600/10 px-3 py-2 text-xs text-emerald-200 transition hover:bg-emerald-600/20 disabled:opacity-50"
+                  disabled={generationLoading || loading}
+                >
+                  {generationLoading ? "Génération..." : "Générer avec Ollama"}
+                </button>
+              </div>
+            )}
+            <div className="mt-4 space-y-3">
+              <input
+                type="text"
+                value={commitTitle}
+                onChange={(e) => setCommitTitle(e.target.value)}
+                className="w-full rounded border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+                placeholder="Titre du commit..."
+              />
+              <textarea
+                value={commitDescription}
+                onChange={(e) => setCommitDescription(e.target.value)}
+                className="w-full rounded border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+                placeholder="Description du commit..."
+                rows={3}
+              />
+            </div>
+            {generationError && (
+              <div className="mt-2 rounded border border-amber-600/40 bg-amber-600/10 px-3 py-2 text-xs text-amber-200">
+                {generationError}
+              </div>
+            )}
             <div className="mt-6 flex justify-end gap-3">
               <button
                 type="button"
@@ -405,7 +492,7 @@ const DiffView: React.FC = () => {
               <button
                 type="button"
                 onClick={handleConfirmCommit}
-                disabled={!commitMessage.trim() || loading}
+                disabled={!commitTitle.trim() || loading}
                 className="rounded border border-emerald-600/40 bg-emerald-600/10 px-4 py-2 text-sm text-emerald-200 transition hover:bg-emerald-600/20 disabled:opacity-50"
               >
                 {loading ? "Commit en cours..." : "Commiter"}

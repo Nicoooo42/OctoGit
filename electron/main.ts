@@ -260,6 +260,28 @@ function registerIpcHandlers() {
   );
 
   ipcMain.handle(
+    "ollama:get-config",
+    async (_event: IpcMainInvokeEvent, payload: { key: string }) =>
+      buildResponse(Promise.resolve(backend!.getOllamaConfig(payload.key)))
+  );
+
+  ipcMain.handle(
+    "ollama:set-config",
+    async (_event: IpcMainInvokeEvent, payload: { key: string; value: string }) =>
+      buildResponse(backend!.setOllamaConfig(payload.key, payload.value))
+  );
+
+  ipcMain.handle(
+    "ollama:clear-config",
+    async () => buildResponse(backend!.clearOllamaConfig())
+  );
+
+  ipcMain.handle(
+    "ollama:generate-commit-message",
+    async () => buildResponse(backend!.generateCommitMessage())
+  );
+
+  ipcMain.handle(
     "repo:clone",
     async (_event: IpcMainInvokeEvent, payload: { repoUrl: string; localPath: string }) =>
       buildResponse(backend!.cloneRepository(payload.repoUrl, payload.localPath).then(result => openAndSnapshot(result.path)))

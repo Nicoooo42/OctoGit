@@ -2,17 +2,23 @@ import { GitService } from "./gitService.js";
 import { RecentRepoStore } from "./recentRepoStore.js";
 import { GitLabStore } from "./gitlabStore.js";
 import { GitLabService } from "./gitlabService.js";
+import { OllamaStore } from "./ollamaStore.js";
+import { OllamaService } from "./ollamaService.js";
 
 export class BackendServer {
   private readonly gitService = new GitService();
   private readonly recentRepos: RecentRepoStore;
   private readonly gitlabStore: GitLabStore;
   private readonly gitlabService: GitLabService;
+  private readonly ollamaStore: OllamaStore;
+  private readonly ollamaService: OllamaService;
 
   constructor(private readonly storageDir: string) {
     this.recentRepos = new RecentRepoStore(storageDir);
     this.gitlabStore = new GitLabStore(storageDir);
     this.gitlabService = new GitLabService(this.gitlabStore);
+    this.ollamaStore = new OllamaStore(storageDir);
+    this.ollamaService = new OllamaService(this.ollamaStore);
   }
 
   async openRepository(repoPath: string) {
@@ -157,6 +163,27 @@ export class BackendServer {
 
   async testGitLabConnection() {
     return this.gitlabService.testConnection();
+  }
+
+  getOllamaConfig(key: string) {
+    return this.ollamaStore.getConfig(key);
+  }
+
+  async setOllamaConfig(key: string, value: string) {
+    this.ollamaStore.setConfig(key, value);
+  }
+
+  async clearOllamaConfig() {
+    this.ollamaStore.clearConfig();
+  }
+
+  async generateCommitMessage() {
+    console.log('[Server] Starting generateCommitMessage');
+    const stagedChanges = await this.gitService.getStagedChanges();
+    console.log('[Server] Got staged changes, calling Ollama service');
+    const result = await this.ollamaService.generateCommitMessage(stagedChanges);
+    console.log('[Server] Ollama service returned:', result);
+    return result;
   }
 
   async getGitLabProjects(page = 1, perPage = 20) {
