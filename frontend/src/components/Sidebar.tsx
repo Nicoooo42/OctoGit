@@ -138,25 +138,60 @@ const Sidebar: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-3 gap-2 px-4 py-4 text-xs">
-        <SidebarButton icon={<ArrowDownToLine className="h-4 w-4" />} onClick={() => pull()} disabled={loading}>
+        <button
+          type="button"
+          onClick={() => pull()}
+          disabled={loading}
+          className="flex flex-col items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/60 p-2 text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <ArrowDownToLine className="h-4 w-4" />
           Pull
-        </SidebarButton>
-        <SidebarButton icon={<ArrowUpFromLine className="h-4 w-4" />} onClick={() => push()} disabled={loading}>
+        </button>
+        <button
+          type="button"
+          onClick={() => push()}
+          disabled={loading}
+          className="flex flex-col items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/60 p-2 text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <ArrowUpFromLine className="h-4 w-4" />
           Push
-        </SidebarButton>
-        <SidebarButton icon={<RefreshCcw className="h-4 w-4" />} onClick={() => fetch()} disabled={loading}>
+        </button>
+        <button
+          type="button"
+          onClick={() => fetch()}
+          disabled={loading}
+          className="flex flex-col items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/60 p-2 text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <RefreshCcw className="h-4 w-4" />
           Fetch
-        </SidebarButton>
-        <SidebarButton icon={<Plus className="h-4 w-4" />} onClick={handleCreateBranch} disabled={loading}>
+        </button>
+        <button
+          type="button"
+          onClick={handleCreateBranch}
+          disabled={loading}
+          className="flex flex-col items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/60 p-2 text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Plus className="h-4 w-4" />
           Branche
-        </SidebarButton>
-        <SidebarButton icon={<GitCommit className="h-4 w-4" />} onClick={handleCommit} disabled={loading || !workingDirStatus || stagedFiles.length === 0}>
+        </button>
+        <button
+          type="button"
+          onClick={handleCommit}
+          disabled={loading || !workingDirStatus || stagedFiles.length === 0}
+          className="flex flex-col items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/60 p-2 text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <GitCommit className="h-4 w-4" />
           Commit
-        </SidebarButton>
-        <SidebarButton icon={<Archive className="h-4 w-4" />} onClick={handleStash} disabled={loading}>
+        </button>
+        <button
+          type="button"
+          onClick={handleStash}
+          disabled={loading}
+          className="flex flex-col items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/60 p-2 text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Archive className="h-4 w-4" />
           Stash
-        </SidebarButton>
-
+        </button>
       </div>
 
       {showBranchInput && (

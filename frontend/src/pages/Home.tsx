@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FolderOpen, GitBranch, Download } from "lucide-react";
 import { useRepoContext } from "../context/RepoContext";
+import Loading from "../components/Loading";
 
 const Home: React.FC = () => {
   const navigate = useNavigate();
@@ -207,6 +208,7 @@ const Home: React.FC = () => {
           </div>
         </div>
       )}
+      {cloneLoading && <Loading message="Clonage du dépôt en cours..." />}
     </div>
   );
 };

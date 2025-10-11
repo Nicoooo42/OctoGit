@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import Loading from '../components/Loading';
 
 const Config: React.FC = () => {
   const navigate = useNavigate();
@@ -174,6 +175,7 @@ const Config: React.FC = () => {
           {status}
         </div>
       )}
+      {loading && <Loading message="Sauvegarde en cours..." />}
     </div>
   );
 };
