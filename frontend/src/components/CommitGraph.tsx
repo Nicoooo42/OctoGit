@@ -507,10 +507,16 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
 
     const svg = d3.select(svgRef.current);
     svg.selectAll("*").remove();
+    
+    const container = containerRef.current;
+    const containerWidth = container ? container.clientWidth : layout.width;
+    const availableWidth = containerWidth - MARGIN.left - MARGIN.right;
+    const laneWidth = layout.laneCount > 0 ? availableWidth / layout.laneCount : LANE_WIDTH;
+    
     svg
-      .attr("width", layout.width)
+      .attr("width", "100%")
       .attr("height", layout.height)
-      .style("minWidth", `${layout.width}px`)
+      .style("minWidth", `${containerWidth}px`)
       .style("minHeight", `${layout.height}px`);
 
   const g = svg.append("g").attr("transform", `translate(${MARGIN.left}, ${MARGIN.top})`);
@@ -544,9 +550,9 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
 
         const sourceNode = graph.nodes[sourceIndex];
         const targetNode = graph.nodes[targetIndex];
-        const x1 = sourceNode.lane * LANE_WIDTH;
+        const x1 = sourceNode.lane * laneWidth;
         const y1 = sourceIndex * ROW_HEIGHT;
-        const x2 = targetNode.lane * LANE_WIDTH;
+        const x2 = targetNode.lane * laneWidth;
         const y2 = targetIndex * ROW_HEIGHT;
 
         // Lignes droites verticales si même lane
@@ -568,7 +574,7 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
       .attr("class", "commit-node")
       .attr("transform", (node: CommitNode) => {
         const actualIndex = nodeIndexMap.get(node.hash) ?? 0;
-        const x = node.lane * LANE_WIDTH;
+        const x = node.lane * laneWidth;
         const y = actualIndex * ROW_HEIGHT;
         return `translate(${x}, ${y})`;
       })
