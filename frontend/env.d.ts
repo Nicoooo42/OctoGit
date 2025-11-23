@@ -4,6 +4,7 @@ import type {
   BranchInfo,
   CommitDetails,
   CommitGraphData,
+  MergeConflictFile,
   RecentRepository,
   RepoSummary,
   BackendResponse
@@ -26,6 +27,7 @@ declare global {
       getCommitDetails(hash: string): Promise<BackendResponse<CommitDetails>>;
       getDiff(hash: string, filePath: string): Promise<BackendResponse<string>>;
       getWorkingDirStatus(): Promise<BackendResponse<unknown>>;
+  getMergeConflicts(): Promise<BackendResponse<MergeConflictFile[]>>;
       commit(message: string): Promise<BackendResponse<unknown>>;
       checkout(branch: string): Promise<BackendResponse<unknown>>;
       createBranch(name: string, base?: string): Promise<BackendResponse<unknown>>;
@@ -52,10 +54,15 @@ declare global {
       unstageHunk(filePath: string, hunk: string): Promise<BackendResponse<unknown>>;
       unstageFile(filePath: string): Promise<BackendResponse<unknown>>;
       stageFile(filePath: string): Promise<BackendResponse<unknown>>;
+      resolveConflict(filePath: string, strategy: "ours" | "theirs"): Promise<BackendResponse<unknown>>;
+      saveConflictResolution(filePath: string, content: string, stage?: boolean): Promise<BackendResponse<unknown>>;
       getOllamaConfig(key: string): Promise<BackendResponse<string>>;
       setOllamaConfig(key: string, value: string): Promise<BackendResponse<unknown>>;
       clearOllamaConfig(): Promise<BackendResponse<unknown>>;
-      generateCommitMessage(): Promise<BackendResponse<string>>;
+      generateCommitMessage(): Promise<BackendResponse<{ title: string; description: string }>>;
+      getAppConfig(key: string): Promise<BackendResponse<string>>;
+      setAppConfig(key: string, value: string): Promise<BackendResponse<unknown>>;
+      clearAppConfig(): Promise<BackendResponse<unknown>>;
       minimizeWindow(): Promise<void>;
       maximizeWindow(): Promise<void>;
       closeWindow(): Promise<void>;

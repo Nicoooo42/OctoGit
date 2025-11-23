@@ -1,4 +1,5 @@
 import React, { useEffect } from "react";
+import Modal from "./Modal";
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -22,25 +23,22 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === "Escape") {
-          onCancel();
-        } else if (e.key === "Enter") {
+        if (e.key === "Enter") {
           onConfirm();
         }
       };
       window.addEventListener("keydown", handleKeyDown);
       return () => window.removeEventListener("keydown", handleKeyDown);
     }
-  }, [isOpen, onConfirm, onCancel]);
-
-  if (!isOpen) return null;
+  }, [isOpen, onConfirm]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="w-96 rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-xl">
-        <h3 className="mb-2 text-lg font-semibold text-slate-100">{title}</h3>
-        <p className="mb-6 text-sm text-slate-300">{message}</p>
-        <div className="flex gap-3">
+    <Modal
+      isOpen={isOpen}
+      title={title}
+      onClose={onCancel}
+      footer={
+        <>
           <button
             type="button"
             onClick={onCancel}
@@ -55,9 +53,11 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
           >
             {confirmLabel}
           </button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <p className="text-sm text-slate-300">{message}</p>
+    </Modal>
   );
 };
 

@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Archive,
+  AlertTriangle,
   ArrowDownToLine,
   ArrowUpFromLine,
   File,
   GitBranch,
   GitCommit,
-  GitPullRequest,
   Plus,
   RefreshCcw
 } from "lucide-react";
@@ -59,6 +59,10 @@ const Sidebar: React.FC = () => {
       .filter((file: any) => file.working_dir !== ' ')
       .map((file: any) => file.path)
   ), [stagedFiles]);
+  const conflictCount = useMemo(
+    () => (Array.isArray(workingDirStatus?.conflicted) ? workingDirStatus.conflicted.length : 0),
+    [workingDirStatus]
+  );
 
   const handleGoToConfig = () => {
     navigate('/config');
@@ -113,11 +117,6 @@ const Sidebar: React.FC = () => {
   const handleDeleteBranch = async (branchName: string) => {
     if (!confirm(`Supprimer la branche ${branchName} ?`)) return;
     await deleteBranch(branchName);
-  };
-
-  const handleMerge = async (branchName: string) => {
-    if (!confirm(`Fusionner ${branchName} dans la branche courante ?`)) return;
-    await merge(branchName);
   };
 
   return (
@@ -191,6 +190,19 @@ const Sidebar: React.FC = () => {
         >
           <Archive className="h-4 w-4" />
           Stash
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/repo/conflicts')}
+          disabled={conflictCount === 0 || loading}
+          className={`col-span-3 flex items-center justify-center gap-2 rounded-lg border p-2 text-sm transition ${
+            conflictCount > 0
+              ? "border-amber-400/60 bg-amber-500/10 text-amber-200 hover:border-amber-300/70 hover:bg-amber-500/20"
+              : "border-slate-700 bg-slate-800/60 text-slate-300 hover:border-cyan-400/40 hover:text-cyan-200"
+          } disabled:cursor-not-allowed disabled:opacity-50`}
+        >
+          <AlertTriangle className="h-4 w-4" />
+          {conflictCount > 0 ? `Conflits (${conflictCount})` : 'Conflits'}
         </button>
       </div>
 
@@ -270,7 +282,6 @@ const Sidebar: React.FC = () => {
             latestCommit={branch.latestCommit}
             onCheckout={() => checkout(branch.name)}
             onDelete={() => handleDeleteBranch(branch.name)}
-            onMerge={() => handleMerge(branch.name)}
           />
         ))}
         {localBranches.length === 0 && (
@@ -289,7 +300,6 @@ const Sidebar: React.FC = () => {
             latestCommit={branch.latestCommit}
             onCheckout={() => checkout(branch.name)}
             onDelete={() => handleDeleteBranch(branch.name)}
-            onMerge={() => handleMerge(branch.name)}
             remote
           />
         ))}
@@ -326,9 +336,8 @@ const BranchRow: React.FC<{
   remote?: boolean;
   onCheckout: () => void;
   onDelete: () => void;
-  onMerge: () => void;
-}> = ({ name, color, current, latestCommit, remote = false, onCheckout, onDelete, onMerge }) => (
-  <div className="group mb-1 flex items-center justify-between rounded-lg px-2 py-2 text-sm hover:bg-slate-800/60">
+}> = ({ name, color, current, latestCommit, remote = false, onCheckout, onDelete }) => (
+  <div className={`group mb-1 flex items-center justify-between rounded-lg px-2 py-2 text-sm hover:bg-slate-800/60 ${current ? 'bg-cyan-900/30 border border-cyan-600/50' : ''}`}>
     <button
       type="button"
       onClick={onCheckout}
@@ -338,7 +347,7 @@ const BranchRow: React.FC<{
       <div>
         <div className="flex items-center gap-2 text-slate-100">
           <GitBranch className="h-3.5 w-3.5 text-slate-500" />
-          <span className="truncate text-sm">
+          <span className={`truncate text-sm ${current ? 'font-semibold text-cyan-200' : ''}`}>
             {name}
             {remote && <span className="ml-2 rounded bg-slate-700/80 px-1 text-xs text-slate-300">remote</span>}
           </span>
@@ -348,9 +357,6 @@ const BranchRow: React.FC<{
       </div>
     </button>
     <div className="flex gap-1">
-      <IconButton label="Fusionner" onClick={onMerge}>
-        <GitPullRequest className="h-3.5 w-3.5" />
-      </IconButton>
       {!current && (
         <IconButton label="Supprimer" onClick={onDelete}>
           <span className="text-xs">✕</span>

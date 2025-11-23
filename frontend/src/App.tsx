@@ -7,6 +7,7 @@ import Home from "./pages/Home";
 import RepoView from "./pages/RepoView";
 import DiffView from "./pages/DiffView";
 import Config from "./pages/Config";
+import Conflicts from "./pages/Conflicts";
 
 const AppContent: React.FC = () => {
   const { loading } = useRepoContext();
@@ -19,6 +20,7 @@ const AppContent: React.FC = () => {
           <Route path="/" element={<Home />} />
           <Route path="/repo" element={<RepoView />} />
           <Route path="/repo/diff/:commitHash" element={<DiffView />} />
+          <Route path="/repo/conflicts" element={<Conflicts />} />
           <Route path="/config" element={<Config />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

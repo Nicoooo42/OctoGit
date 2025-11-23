@@ -4,6 +4,7 @@ import type {
   BranchInfo,
   CommitDetails,
   CommitGraphData,
+  MergeConflictFile,
   RecentRepository,
   RepoSummary
 } from "../shared/git.js";
@@ -40,6 +41,9 @@ const api = {
   },
   getWorkingDirStatus(): Response<unknown> {
     return ipcRenderer.invoke("repo:working-dir-status");
+  },
+  getMergeConflicts(): Response<MergeConflictFile[]> {
+    return ipcRenderer.invoke("repo:merge-conflicts");
   },
   commit(message: string): Response<unknown> {
     return ipcRenderer.invoke("repo:commit", message);
@@ -101,6 +105,12 @@ const api = {
   stageFile(filePath: string): Response<unknown> {
     return ipcRenderer.invoke("repo:stage-file", { filePath });
   },
+  resolveConflict(filePath: string, strategy: "ours" | "theirs"): Response<unknown> {
+    return ipcRenderer.invoke("repo:resolve-conflict", { filePath, strategy });
+  },
+  saveConflictResolution(filePath: string, content: string, stage?: boolean): Response<unknown> {
+    return ipcRenderer.invoke("repo:save-conflict-resolution", { filePath, content, stage });
+  },
   getGitConfig(key: string): Response<string> {
     return ipcRenderer.invoke("config:get", { key });
   },
@@ -143,6 +153,15 @@ const api = {
   generateCommitMessage(): Response<{ title: string; description: string }> {
     return ipcRenderer.invoke("ollama:generate-commit-message");
   },
+  getAppConfig(key: string): Response<string> {
+    return ipcRenderer.invoke("app:get-config", { key });
+  },
+  setAppConfig(key: string, value: string): Response<unknown> {
+    return ipcRenderer.invoke("app:set-config", { key, value });
+  },
+  clearAppConfig(): Response<unknown> {
+    return ipcRenderer.invoke("app:clear-config");
+  },
   minimizeWindow(): Promise<void> {
     return ipcRenderer.invoke("window:minimize");
   },
@@ -158,9 +177,3 @@ const api = {
 };
 
 contextBridge.exposeInMainWorld("BciGit", api);
-
-declare global {
-  interface Window {
-    BciGit: typeof api;
-  }
-}

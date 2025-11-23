@@ -26,6 +26,7 @@ export interface CommitLink {
   source: string;
   target: string;
   color: string;
+  isFirstParent?: boolean;
 }
 
 export interface CommitGraphData {
@@ -51,6 +52,17 @@ export interface RecentRepository {
   path: string;
   name: string;
   lastOpened: number;
+}
+
+export interface MergeConflictFile {
+  path: string;
+  indexStatus: string;
+  workingTreeStatus: string;
+  base: string | null;
+  ours: string | null;
+  theirs: string | null;
+  current: string | null;
+  isBinary: boolean;
 }
 
 export type BackendSuccess<T> = {

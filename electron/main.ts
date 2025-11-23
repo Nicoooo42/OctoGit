@@ -116,8 +116,24 @@ function registerIpcHandlers() {
     async () => buildResponse(backend!.getWorkingDirStatus())
   );
   ipcMain.handle(
+    "repo:merge-conflicts",
+    async () => buildResponse(backend!.getMergeConflicts())
+  );
+  ipcMain.handle(
     "repo:commit",
     async (_event: IpcMainInvokeEvent, message: string) => buildResponse(backend!.commit(message))
+  );
+  ipcMain.handle(
+    "repo:resolve-conflict",
+    async (_event: IpcMainInvokeEvent, payload: { filePath: string; strategy: "ours" | "theirs" }) =>
+      buildResponse(backend!.resolveConflict(payload.filePath, payload.strategy))
+  );
+  ipcMain.handle(
+    "repo:save-conflict-resolution",
+    async (
+      _event: IpcMainInvokeEvent,
+      payload: { filePath: string; content: string; stage?: boolean }
+    ) => buildResponse(backend!.saveConflictResolution(payload.filePath, payload.content, payload.stage ?? true))
   );
   ipcMain.handle(
     "repo:checkout",
@@ -279,6 +295,23 @@ function registerIpcHandlers() {
   ipcMain.handle(
     "ollama:generate-commit-message",
     async () => buildResponse(backend!.generateCommitMessage())
+  );
+
+  ipcMain.handle(
+    "app:get-config",
+    async (_event: IpcMainInvokeEvent, payload: { key: string }) =>
+      buildResponse(Promise.resolve(backend!.getAppConfig(payload.key)))
+  );
+
+  ipcMain.handle(
+    "app:set-config",
+    async (_event: IpcMainInvokeEvent, payload: { key: string; value: string }) =>
+      buildResponse(backend!.setAppConfig(payload.key, payload.value))
+  );
+
+  ipcMain.handle(
+    "app:clear-config",
+    async () => buildResponse(backend!.clearAppConfig())
   );
 
   ipcMain.handle(

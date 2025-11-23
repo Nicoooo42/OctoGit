@@ -4,6 +4,7 @@ import { GitLabStore } from "./gitlabStore.js";
 import { GitLabService } from "./gitlabService.js";
 import { OllamaStore } from "./ollamaStore.js";
 import { OllamaService } from "./ollamaService.js";
+import { AppStore } from "./appStore.js";
 
 export class BackendServer {
   private readonly gitService = new GitService();
@@ -12,6 +13,8 @@ export class BackendServer {
   private readonly gitlabService: GitLabService;
   private readonly ollamaStore: OllamaStore;
   private readonly ollamaService: OllamaService;
+  private readonly appStore: AppStore;
+  private periodicFetchInterval: NodeJS.Timeout | null = null;
 
   constructor(private readonly storageDir: string) {
     this.recentRepos = new RecentRepoStore(storageDir);
@@ -19,11 +22,13 @@ export class BackendServer {
     this.gitlabService = new GitLabService(this.gitlabStore);
     this.ollamaStore = new OllamaStore(storageDir);
     this.ollamaService = new OllamaService(this.ollamaStore);
+    this.appStore = new AppStore(storageDir);
   }
 
   async openRepository(repoPath: string) {
     await this.gitService.openRepository(repoPath);
     this.recentRepos.touch(repoPath);
+    this.startPeriodicFetch();
 
     return {
       path: this.gitService.getCurrentRepo(),
@@ -59,6 +64,18 @@ export class BackendServer {
 
   async getWorkingDirStatus() {
     return this.gitService.getWorkingDirStatus();
+  }
+
+  async getMergeConflicts() {
+    return this.gitService.getMergeConflicts();
+  }
+
+  async resolveConflict(filePath: string, strategy: "ours" | "theirs") {
+    return this.gitService.resolveConflict(filePath, strategy);
+  }
+
+  async saveConflictResolution(filePath: string, content: string, stage = true) {
+    return this.gitService.saveConflictResolution(filePath, content, stage);
   }
 
   async commit(message: string) {
@@ -175,6 +192,47 @@ export class BackendServer {
 
   async clearOllamaConfig() {
     this.ollamaStore.clearConfig();
+  }
+
+  getAppConfig(key: string) {
+    return this.appStore.getConfig(key);
+  }
+
+  async setAppConfig(key: string, value: string) {
+    this.appStore.setConfig(key, value);
+    if (key === 'periodic_fetch_enabled') {
+      this.startPeriodicFetch();
+    }
+  }
+
+  async clearAppConfig() {
+    this.appStore.clearConfig();
+  }
+
+  private startPeriodicFetch() {
+    this.stopPeriodicFetch(); // Clear any existing interval
+    const enabled = this.appStore.getConfig('periodic_fetch_enabled') === 'true';
+    if (enabled) {
+      this.periodicFetchInterval = setInterval(async () => {
+        try {
+          if (this.gitService.getCurrentRepo()) {
+            await this.gitService.fetch();
+            console.log('[Periodic Fetch] Fetch completed successfully');
+          }
+        } catch (error) {
+          console.error('[Periodic Fetch] Error during fetch:', error);
+        }
+      }, 60000); // 60 seconds = 1 minute
+      console.log('[Periodic Fetch] Started periodic fetch (every 60 seconds)');
+    }
+  }
+
+  private stopPeriodicFetch() {
+    if (this.periodicFetchInterval) {
+      clearInterval(this.periodicFetchInterval);
+      this.periodicFetchInterval = null;
+      console.log('[Periodic Fetch] Stopped periodic fetch');
+    }
   }
 
   async generateCommitMessage() {

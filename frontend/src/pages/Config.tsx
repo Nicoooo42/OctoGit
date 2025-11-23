@@ -20,6 +20,7 @@ const Config: React.FC = () => {
   const [ollamaTopP, setOllamaTopP] = useState('0.9');
   const [ollamaTopK, setOllamaTopK] = useState('40');
   const [ollamaSystemPrompt, setOllamaSystemPrompt] = useState('');
+  const [periodicFetchEnabled, setPeriodicFetchEnabled] = useState(false);
 
   useEffect(() => {
     loadConfig();
@@ -58,6 +59,9 @@ const Config: React.FC = () => {
       setOllamaTopP(topPResult.success && topPResult.data ? topPResult.data : '0.9');
   setOllamaTopK(topKResult.success && topKResult.data ? topKResult.data : '40');
   setOllamaSystemPrompt(systemPromptResult.success && systemPromptResult.data ? systemPromptResult.data : '');
+      
+      const periodicFetchResult = await window.BciGit.getAppConfig('periodic_fetch_enabled');
+      setPeriodicFetchEnabled(periodicFetchResult.success ? periodicFetchResult.data === 'true' : false);
     } catch (e) {
       console.error('Erreur lors du chargement de la config:', e);
     }
@@ -83,7 +87,8 @@ const Config: React.FC = () => {
         window.BciGit.setOllamaConfig('num_ctx', ollamaNumCtx),
         window.BciGit.setOllamaConfig('top_p', ollamaTopP),
         window.BciGit.setOllamaConfig('top_k', ollamaTopK),
-        window.BciGit.setOllamaConfig('system', ollamaSystemPrompt)
+        window.BciGit.setOllamaConfig('system', ollamaSystemPrompt),
+        window.BciGit.setAppConfig('periodic_fetch_enabled', periodicFetchEnabled ? 'true' : 'false')
       ]);
       setStatus('Configuration enregistrée !');
       setTimeout(() => setStatus(null), 3000);
@@ -155,6 +160,18 @@ const Config: React.FC = () => {
             onChange={e => setEmail(e.target.value)}
             placeholder="Votre email Git"
           />
+        </div>
+        <div className="mb-4">
+          <label className="inline-flex items-center gap-2 text-sm text-slate-200">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-600 bg-slate-900"
+              checked={periodicFetchEnabled}
+              onChange={(e) => setPeriodicFetchEnabled(e.target.checked)}
+            />
+            Fetch automatique toutes les minutes
+          </label>
+          <p className="text-xs text-slate-400 mt-1">Effectue automatiquement un git fetch toutes les minutes pour synchroniser les changements distants.</p>
         </div>
       </div>
 

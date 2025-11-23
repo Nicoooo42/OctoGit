@@ -11,7 +11,8 @@ import type {
   CommitDetails,
   CommitGraphData,
   RecentRepository,
-  RepoSummary
+  RepoSummary,
+  MergeConflictFile
 } from "../types/git";
 import { unwrap } from "../utils/ipc";
 
@@ -45,6 +46,7 @@ type RepoContextValue = {
   commitDetails: CommitDetails | null;
   diff: DiffState;
   workingDirStatus: any;
+  conflicts: MergeConflictFile[];
   clearError: () => void;
   fetchRecents: () => Promise<void>;
   openRepoFromDialog: () => Promise<boolean>;
@@ -74,6 +76,13 @@ type RepoContextValue = {
   unstageHunk: (filePath: string, hunk: string) => Promise<void>;
   unstageFile: (filePath: string) => Promise<void>;
   stageFile: (filePath: string) => Promise<void>;
+  loadConflicts: () => Promise<void>;
+  resolveConflict: (filePath: string, strategy: "ours" | "theirs") => Promise<void>;
+  saveConflictResolution: (
+    filePath: string,
+    content: string,
+    options?: { stage?: boolean }
+  ) => Promise<void>;
 };
 
 const RepoContext = createContext<RepoContextValue | undefined>(undefined);
@@ -90,6 +99,7 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [commitDetails, setCommitDetails] = useState<CommitDetails | null>(null);
   const [diff, setDiff] = useState<DiffState>(null);
   const [workingDirStatus, setWorkingDirStatus] = useState<any>(null);
+  const [conflicts, setConflicts] = useState<MergeConflictFile[]>([]);
 
   const handleError = useCallback((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
@@ -129,6 +139,7 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setRepo(snapshot.repo);
       setGraph(snapshot.commits);
       setBranches(snapshot.branches);
+      setConflicts([]);
       const initialHash = snapshot.commits.nodes[0]?.hash ?? null;
       setSelectedCommit(initialHash);
       setSelectedCommitsState(initialHash ? [initialHash] : []);
@@ -213,14 +224,16 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     setLoading(true);
     try {
-      const [branchesData, graphData, workingDirData] = await Promise.all([
+      const [branchesData, graphData, workingDirData, conflictsData] = await Promise.all([
         unwrap(getBciGitApi().getBranches()),
         unwrap(getBciGitApi().getCommitGraph()),
-        unwrap(getBciGitApi().getWorkingDirStatus())
+        unwrap(getBciGitApi().getWorkingDirStatus()),
+        unwrap<MergeConflictFile[]>(getBciGitApi().getMergeConflicts())
       ]);
       setBranches(branchesData);
       setGraph(graphData);
       setWorkingDirStatus(workingDirData);
+      setConflicts(conflictsData);
       if (selectedCommit) {
         await selectCommitInternal(selectedCommit);
       }
@@ -266,6 +279,19 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     },
     []
   );
+
+  const loadConflicts = useCallback(async () => {
+    if (!repo) {
+      setConflicts([]);
+      return;
+    }
+    try {
+      const data = await unwrap<MergeConflictFile[]>(getBciGitApi().getMergeConflicts());
+      setConflicts(data);
+    } catch (err) {
+      handleError(err);
+    }
+  }, [handleError, repo]);
 
   const gitAction = useCallback(
     async (action: () => Promise<unknown>) => {
@@ -422,10 +448,26 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     []
   );
 
+  const resolveConflict = useCallback(
+    async (filePath: string, strategy: "ours" | "theirs") => {
+      await gitAction(() => unwrap(getBciGitApi().resolveConflict(filePath, strategy)));
+    },
+    [gitAction]
+  );
+
+  const saveConflictResolution = useCallback(
+    async (filePath: string, content: string, options?: { stage?: boolean }) => {
+      const stage = options?.stage ?? true;
+      await gitAction(() => unwrap(getBciGitApi().saveConflictResolution(filePath, content, stage)));
+    },
+    [gitAction]
+  );
+
   const clearError = useCallback(() => setError(null), []);
 
   useEffect(() => {
     if (!repo) {
+      setConflicts([]);
       return;
     }
 
@@ -435,9 +477,13 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const pollWorkingDirStatus = async () => {
       try {
-        const status = await unwrap(getBciGitApi().getWorkingDirStatus());
+        const [status, conflictsData] = await Promise.all([
+          unwrap(getBciGitApi().getWorkingDirStatus()),
+          unwrap<MergeConflictFile[]>(getBciGitApi().getMergeConflicts())
+        ]);
         if (!cancelled) {
           setWorkingDirStatus(status);
+          setConflicts(conflictsData);
         }
       } catch (err) {
         if (!cancelled) {
@@ -469,17 +515,18 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loading,
       error,
       selectedCommit,
-  selectedCommits,
+      selectedCommits,
       commitDetails,
       diff,
       workingDirStatus,
+      conflicts,
       clearError,
       fetchRecents,
       openRepoFromDialog,
       openRepoAtPath,
       refreshAll,
       selectCommit,
-  setSelectedCommits,
+      setSelectedCommits,
       loadDiff,
       getWorkingDirStatus,
       commit,
@@ -492,8 +539,8 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       merge,
       cherryPick,
       rebase,
-  squashCommits,
-  dropCommits,
+      squashCommits,
+      dropCommits,
       stash,
       stashPop,
       stashList,
@@ -501,50 +548,55 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       discardHunk,
       unstageHunk,
       unstageFile,
-      stageFile
+      stageFile,
+      loadConflicts,
+      resolveConflict,
+      saveConflictResolution
     }),
     [
       branches,
       checkout,
+      cherryPick,
+      clearError,
       commit,
       commitDetails,
+      conflicts,
       createBranch,
       deleteBranch,
       diff,
-      workingDirStatus,
-      error,
+      discardHunk,
+      dropCommits,
       fetch,
       fetchRecents,
-      graph,
-  cherryPick,
-      loadDiff,
       getWorkingDirStatus,
+      graph,
+      loadConflicts,
+      loadDiff,
       loading,
       merge,
       openRepoAtPath,
       openRepoFromDialog,
-  rebase,
-  dropCommits,
-  squashCommits,
       pull,
       push,
+      rebase,
       recents,
       refreshAll,
       repo,
-  selectedCommits,
-      selectCommit,
-  squashCommits,
-  setSelectedCommits,
+      resolveConflict,
+      saveConflictResolution,
       selectedCommit,
-      clearError,
-      stash,
-      stashPop,
-      stashList,
+      selectedCommits,
+      selectCommit,
+      setSelectedCommits,
+      squashCommits,
+      stageFile,
       stageHunk,
-      discardHunk,
-      unstageHunk,
+      stash,
+      stashList,
+      stashPop,
       unstageFile,
-      stageFile
+      unstageHunk,
+      workingDirStatus
     ]
   );
 

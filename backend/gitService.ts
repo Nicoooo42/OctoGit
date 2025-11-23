@@ -7,7 +7,8 @@ import {
   type CommitDetails,
   type CommitGraphData,
   type CommitLink,
-  type CommitNode
+  type CommitNode,
+  type MergeConflictFile
 } from "../shared/git.js";
 
 const COLOR_PALETTE = [
@@ -112,8 +113,102 @@ export class GitService {
       ahead: status.ahead,
       behind: status.behind,
       current: status.current,
-      tracking: status.tracking
+      tracking: status.tracking,
+      conflicted: status.conflicted
     };
+  }
+
+  async getMergeConflicts(): Promise<MergeConflictFile[]> {
+    const git = this.ensureRepo();
+    const status = await git.status();
+    const conflicted = status.conflicted ?? [];
+
+    if (conflicted.length === 0) {
+      return [];
+    }
+
+    const statusMap = new Map<string, { index: string; working: string }>();
+    status.files.forEach((file) => {
+      statusMap.set(file.path, { index: file.index, working: file.working_dir });
+    });
+
+    const conflicts: MergeConflictFile[] = [];
+    const repoPath = this.getCurrentRepo();
+
+    for (const filePath of conflicted) {
+      const entry = statusMap.get(filePath);
+      const conflict: MergeConflictFile = {
+        path: filePath,
+        indexStatus: entry?.index ?? "U",
+        workingTreeStatus: entry?.working ?? "U",
+        base: null,
+        ours: null,
+        theirs: null,
+        current: null,
+        isBinary: false
+      };
+
+      const base = await this.getConflictStageContent(git, filePath, 1);
+      const ours = await this.getConflictStageContent(git, filePath, 2);
+      const theirs = await this.getConflictStageContent(git, filePath, 3);
+
+      let isBinary = false;
+      if (base !== null && this.containsBinary(base)) {
+        isBinary = true;
+      }
+      if (ours !== null && this.containsBinary(ours)) {
+        isBinary = true;
+      }
+      if (theirs !== null && this.containsBinary(theirs)) {
+        isBinary = true;
+      }
+
+      let current: string | null = null;
+      try {
+        const absolute = path.join(repoPath, filePath);
+        const buffer = fs.readFileSync(absolute);
+        if (buffer.includes(0)) {
+          isBinary = true;
+        } else {
+          current = buffer.toString("utf8");
+        }
+      } catch {
+        current = null;
+      }
+
+      if (isBinary) {
+        conflict.base = null;
+        conflict.ours = null;
+        conflict.theirs = null;
+        conflict.current = null;
+      } else {
+        conflict.base = base;
+        conflict.ours = ours;
+        conflict.theirs = theirs;
+        conflict.current = current;
+      }
+
+      conflict.isBinary = isBinary;
+      conflicts.push(conflict);
+    }
+
+    return conflicts;
+  }
+
+  async resolveConflict(filePath: string, strategy: "ours" | "theirs") {
+    const git = this.ensureRepo();
+    const flag = strategy === "ours" ? "--ours" : "--theirs";
+    await git.checkout([flag, "--", filePath]);
+    await git.add(filePath);
+  }
+
+  async saveConflictResolution(filePath: string, content: string, stage = true) {
+    const git = this.ensureRepo();
+    const absolute = path.join(this.getCurrentRepo(), filePath);
+    await fs.promises.writeFile(absolute, content, "utf8");
+    if (stage) {
+      await git.add(filePath);
+    }
   }
 
   async getStagedChanges(): Promise<string> {
@@ -196,10 +291,10 @@ export class GitService {
       console.log(`[GitService] Commit ${hash.substring(0,7)} assigned lane ${lane}, refs: ${refs.join(', ')}`);
 
       // Propagate lane to parents if they don't have one yet
-      parents.forEach((parentHash: string) => {
-        if (!commitLaneMap.has(parentHash)) {
+      parents.forEach((parentHash: string, parentIndex: number) => {
+        if (parentIndex === 0) {
           commitLaneMap.set(parentHash, lane);
-          console.log(`[GitService] Propagated lane ${lane} to parent ${parentHash.substring(0,7)}`);
+          console.log(`[GitService] Propagated lane ${lane} to first parent ${parentHash.substring(0,7)}`);
         }
       });
 
@@ -208,11 +303,11 @@ export class GitService {
 
       commitColorMap.set(hash, color);
 
-      // Propagate color to parents if they don't have one yet
-      parents.forEach((parentHash: string) => {
-        if (!commitColorMap.has(parentHash)) {
+      // Propagate color to the first parent to keep the main lane consistent
+      parents.forEach((parentHash: string, parentIndex: number) => {
+        if (parentIndex === 0) {
           commitColorMap.set(parentHash, color);
-          console.log(`[GitService] Propagated color ${color} to parent ${parentHash.substring(0,7)}`);
+          console.log(`[GitService] Propagated color ${color} to first parent ${parentHash.substring(0,7)}`);
         }
       });
 
@@ -227,11 +322,12 @@ export class GitService {
         color
       });
 
-      parents.forEach((parentHash: string) => {
+      parents.forEach((parentHash: string, parentIndex: number) => {
         links.push({
           source: hash,
           target: parentHash,
-          color
+          color,
+          isFirstParent: parentIndex === 0
         });
       });
     });
@@ -617,5 +713,22 @@ export class GitService {
 
     // Cloner le dépôt
     await simpleGit().clone(repoUrl, normalized);
+  }
+
+  private async getConflictStageContent(git: SimpleGit, filePath: string, stage: number): Promise<string | null> {
+    try {
+      return await git.raw(["show", `:${stage}:${filePath}`]);
+    } catch {
+      return null;
+    }
+  }
+
+  private containsBinary(content: string): boolean {
+    for (let index = 0; index < content.length; index += 1) {
+      if (content.charCodeAt(index) === 0) {
+        return true;
+      }
+    }
+    return false;
   }
 }

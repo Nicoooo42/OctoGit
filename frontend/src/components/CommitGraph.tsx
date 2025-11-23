@@ -37,12 +37,15 @@ const CommitGraph: React.FC = () => {
     rebase,
     squashCommits,
     dropCommits,
-    stashPop
+    stashPop,
+    branches
   } = useRepoContext();
   const svgRef = useRef<SVGSVGElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [visibleRange, setVisibleRange] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [ignoreNextClick, setIgnoreNextClick] = useState(false);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const [branchModalOpen, setBranchModalOpen] = useState(false);
   const [branchModalCommit, setBranchModalCommit] = useState<CommitNode | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
@@ -52,14 +55,34 @@ const CommitGraph: React.FC = () => {
     onConfirm: () => void;
   } | null>(null);
   const [selectionAnchor, setSelectionAnchor] = useState<string | null>(null);
+  const clickTimerRef = useRef<number | null>(null);
+  const lastClickedNodeRef = useRef<CommitNode | null>(null);
   const [squashModalOpen, setSquashModalOpen] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (clickTimerRef.current !== null) {
+        window.clearTimeout(clickTimerRef.current);
+      }
+    };
+  }, []);
 
   const closeContextMenu = useCallback(() => {
     setContextMenu(null);
+    setIgnoreNextClick(false);
   }, []);
 
   useEffect(() => {
-    const handleGlobalClick = () => closeContextMenu();
+    const handleGlobalClick = (event: MouseEvent) => {
+      if (ignoreNextClick) {
+        setIgnoreNextClick(false);
+        return;
+      }
+      if (contextMenuRef.current && contextMenuRef.current.contains(event.target as Node)) {
+        return;
+      }
+      closeContextMenu();
+    };
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         closeContextMenu();
@@ -72,11 +95,14 @@ const CommitGraph: React.FC = () => {
       window.removeEventListener("click", handleGlobalClick);
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [closeContextMenu]);
+  }, [closeContextMenu, ignoreNextClick]);
 
   useEffect(() => {
-    closeContextMenu();
-  }, [graph, closeContextMenu]);
+    // Ne fermer le context menu que si on n'a pas de modale ouverte
+    if (!branchModalOpen && !squashModalOpen && !(confirmModal?.isOpen)) {
+      setContextMenu(null);
+    }
+  }, [graph, branchModalOpen, squashModalOpen, confirmModal]);
 
   const layout = useMemo(() => {
     if (!graph) {
@@ -140,6 +166,13 @@ const CommitGraph: React.FC = () => {
     [selectedCommits, sortSelection]
   );
 
+  const primarySelectedCommit = useMemo(() => {
+    if (selectedCommit && selectedCommits.includes(selectedCommit)) {
+      return selectedCommit;
+    }
+    return selectedCommits[0] ?? null;
+  }, [selectedCommit, selectedCommits]);
+
   const selectedNodes = useMemo(() => {
     if (!graph) {
       return [] as CommitNode[];
@@ -158,6 +191,39 @@ const CommitGraph: React.FC = () => {
     }
     return graph.head ?? null;
   }, [graph]);
+
+  const currentBranch = useMemo(() => {
+    return branches.find(branch => branch.current);
+  }, [branches]);
+
+  const resolveCheckoutBranch = useCallback(
+    (node: CommitNode): string | null => {
+      if (node.hash === "working-directory" || node.branches.length === 0) {
+        return null;
+      }
+
+      const matchingInfos = branches.filter((branch) => node.branches.includes(branch.name));
+
+      const localNonCurrent = matchingInfos.find((branch) => branch.type === "local" && !branch.current);
+      if (localNonCurrent) {
+        return localNonCurrent.name;
+      }
+
+      const localBranch = matchingInfos.find((branch) => branch.type === "local");
+      if (localBranch) {
+        return localBranch.name;
+      }
+
+      const remoteBranch = matchingInfos.find((branch) => branch.type === "remote");
+      if (remoteBranch) {
+        return remoteBranch.name;
+      }
+
+      const fallback = node.branches.find((branchName) => branchName !== currentBranch?.name);
+      return fallback ?? node.branches[0] ?? null;
+    },
+    [branches, currentBranch]
+  );
 
   const selectionMeta = useMemo(() => {
     if (!graph || sanitizedSelection.length === 0) {
@@ -247,9 +313,15 @@ const CommitGraph: React.FC = () => {
     Boolean(selectionBaseHash) &&
     actionableSelection.length >= 1;
 
-  const isMultiSelectActive =
-    selectedCommits.length > 1 ||
-    (selectedCommits.length === 1 && selectedCommits[0] !== selectedCommit);
+  const isMultiSelectActive = useMemo(() => {
+    if (sanitizedSelection.length === 0) {
+      return false;
+    }
+    if (!primarySelectedCommit) {
+      return sanitizedSelection.length > 1;
+    }
+    return sanitizedSelection.some((hash) => hash !== primarySelectedCommit);
+  }, [primarySelectedCommit, sanitizedSelection]);
 
   const selectionIssue = useMemo(() => {
     if (hasWorkingDirectorySelected && actionableSelection.length === 0) {
@@ -511,7 +583,8 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
     const container = containerRef.current;
     const containerWidth = container ? container.clientWidth : layout.width;
     const availableWidth = containerWidth - MARGIN.left - MARGIN.right;
-    const laneWidth = layout.laneCount > 0 ? availableWidth / layout.laneCount : LANE_WIDTH;
+  const laneWidth = layout.laneCount > 0 ? availableWidth / layout.laneCount : LANE_WIDTH;
+  const laneX = (lane: number) => lane * laneWidth + laneWidth / 2;
     
     svg
       .attr("width", "100%")
@@ -539,8 +612,8 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
       .data(linksSubset, (link: CommitLink) => `${link.source}-${link.target}`)
       .join("path")
       .attr("stroke", (link: CommitLink) => link.color)
-      .attr("stroke-width", 1.5)
-      .attr("opacity", 0.8)
+      .attr("stroke-width", (link: CommitLink) => (link.isFirstParent ? 1.6 : 1.2))
+      .attr("opacity", (link: CommitLink) => (link.isFirstParent ? 0.85 : 0.7))
       .attr("d", (link: CommitLink) => {
         const sourceIndex = nodeIndexMap.get(link.source);
         const targetIndex = nodeIndexMap.get(link.target);
@@ -550,19 +623,34 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
 
         const sourceNode = graph.nodes[sourceIndex];
         const targetNode = graph.nodes[targetIndex];
-        const x1 = sourceNode.lane * laneWidth;
+        const x1 = laneX(sourceNode.lane);
         const y1 = sourceIndex * ROW_HEIGHT;
-        const x2 = targetNode.lane * laneWidth;
+        const x2 = laneX(targetNode.lane);
         const y2 = targetIndex * ROW_HEIGHT;
+        const isFirstParent = link.isFirstParent ?? false;
 
-        // Lignes droites verticales si même lane
-        if (sourceNode.lane === targetNode.lane) {
-          return `M${x1},${y1} L${x2},${y2}`;
+        if (isFirstParent) {
+          if (sourceNode.lane === targetNode.lane) {
+            return `M${x1},${y1} L${x2},${y2}`;
+          }
+          const midY = (y1 + y2) / 2;
+          return `M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}`;
         }
 
-        // Courbes douces pour les changements de lane
-        const midY = (y1 + y2) / 2;
-        return `M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}`;
+        // Courbe plus marquée pour illustrer la jonction de merge
+        let direction = Math.sign(x2 - x1);
+        if (direction === 0) {
+          const lastChar = link.target.charCodeAt(link.target.length - 1);
+          direction = (lastChar & 1) === 0 ? -1 : 1;
+        }
+        const lateralOffset = laneWidth * 0.45;
+        const controlYOffset = Math.max(ROW_HEIGHT * 0.25, (y2 - y1) * 0.35);
+        const controlX1 = x1 + direction * lateralOffset;
+        const controlY1 = y1 + controlYOffset;
+        const controlX2 = x2 - direction * lateralOffset * 0.25;
+        const controlY2 = y2 - controlYOffset * 0.4;
+
+        return `M${x1},${y1} C${controlX1},${controlY1} ${controlX2},${controlY2} ${x2},${y2}`;
       });
 
     const nodeGroup = g.append("g");
@@ -574,7 +662,7 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
       .attr("class", "commit-node")
       .attr("transform", (node: CommitNode) => {
         const actualIndex = nodeIndexMap.get(node.hash) ?? 0;
-        const x = node.lane * laneWidth;
+        const x = laneX(node.lane);
         const y = actualIndex * ROW_HEIGHT;
         return `translate(${x}, ${y})`;
       })
@@ -584,54 +672,79 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
         closeContextMenu();
 
         const hash = node.hash;
-        const isShift = event.shiftKey;
-        const isModKey = event.metaKey || event.ctrlKey;
+        const timer = clickTimerRef.current;
 
-        if (hash === "working-directory") {
-          setSelectedCommits([hash]);
-          setSelectionAnchor(hash);
-          void selectCommit(hash);
-          return;
-        }
+        if (lastClickedNodeRef.current?.hash === hash && timer !== null) {
+          window.clearTimeout(timer);
+          clickTimerRef.current = null;
+          lastClickedNodeRef.current = null;
 
-        if (isShift) {
-          const anchor = selectionAnchor ?? selectedCommits[0] ?? hash;
-          const range = buildRangeSelection(anchor, hash);
-          const nextSelection = range.length > 0 ? range : sortSelection([hash]);
-          setSelectedCommits(nextSelection);
-          setSelectionAnchor(anchor);
-          void selectCommit(hash, { preserveMultiSelection: true });
-          return;
-        }
-
-        if (isModKey) {
-          const isAlreadySelected = selectedCommits.includes(hash);
-          if (isAlreadySelected) {
-            const nextSelection = selectedCommits.filter((selectedHash) => selectedHash !== hash);
-            setSelectedCommits(nextSelection);
-            if (nextSelection.length > 0) {
-              const nextFocus = nextSelection[0];
-              setSelectionAnchor(nextFocus);
-              void selectCommit(nextFocus, { preserveMultiSelection: true });
-            } else {
-              setSelectionAnchor(null);
-              void selectCommit(null);
-            }
-          } else {
-            const nextSelection = sortSelection([...selectedCommits, hash]);
-            setSelectedCommits(nextSelection);
-            setSelectionAnchor(hash);
-            void selectCommit(hash, { preserveMultiSelection: true });
+          const targetBranch = resolveCheckoutBranch(node);
+          if (targetBranch && targetBranch !== currentBranch?.name) {
+            void checkout(targetBranch);
           }
           return;
         }
 
-        const nextSelection = sortSelection([hash]);
-        setSelectedCommits(nextSelection);
-        setSelectionAnchor(hash);
-        void selectCommit(hash);
+        // Set up single-click timer
+        lastClickedNodeRef.current = node;
+        const timeoutId = window.setTimeout(() => {
+          clickTimerRef.current = null;
+          lastClickedNodeRef.current = null;
+
+          // Handle single-click logic
+          const isShift = event.shiftKey;
+          const isModKey = event.metaKey || event.ctrlKey;
+
+          if (hash === "working-directory") {
+            setSelectedCommits([hash]);
+            setSelectionAnchor(hash);
+            void selectCommit(hash);
+            return;
+          }
+
+          if (isShift) {
+            const anchor = selectionAnchor ?? selectedCommits[0] ?? hash;
+            const range = buildRangeSelection(anchor, hash);
+            const nextSelection = range.length > 0 ? range : sortSelection([hash]);
+            setSelectedCommits(nextSelection);
+            setSelectionAnchor(anchor);
+            void selectCommit(hash, { preserveMultiSelection: true });
+            return;
+          }
+
+          if (isModKey) {
+            const isAlreadySelected = selectedCommits.includes(hash);
+            if (isAlreadySelected) {
+              const nextSelection = selectedCommits.filter((selectedHash) => selectedHash !== hash);
+              setSelectedCommits(nextSelection);
+              if (nextSelection.length > 0) {
+                const nextFocus = nextSelection[0];
+                setSelectionAnchor(nextFocus);
+                void selectCommit(nextFocus, { preserveMultiSelection: true });
+              } else {
+                setSelectionAnchor(null);
+                void selectCommit(null);
+              }
+            } else {
+              const nextSelection = sortSelection([...selectedCommits, hash]);
+              setSelectedCommits(nextSelection);
+              setSelectionAnchor(hash);
+              void selectCommit(hash, { preserveMultiSelection: true });
+            }
+            return;
+          }
+
+          const nextSelection = sortSelection([hash]);
+          setSelectedCommits(nextSelection);
+          setSelectionAnchor(hash);
+          void selectCommit(hash);
+        }, 300);
+
+        clickTimerRef.current = timeoutId;
       })
       .on("contextmenu", (event: PointerEvent, node: CommitNode) => {
+        if (event.button !== 2) return;
         event.preventDefault();
         event.stopPropagation();
         const container = containerRef.current;
@@ -648,6 +761,7 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
         x = Math.max(CONTEXT_MENU_MARGIN, Math.min(x, maxX));
         y = Math.max(CONTEXT_MENU_MARGIN, Math.min(y, maxY));
 
+        setIgnoreNextClick(true);
         setContextMenu({ x, y, commit: node });
         const shouldPreserve = selectedCommits.includes(node.hash) && selectedCommits.length > 1;
         if (!shouldPreserve) {
@@ -662,7 +776,7 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
       .attr("r", NODE_RADIUS)
       .attr("cx", 0)
       .attr("cy", 0)
-      .attr("fill", (node: CommitNode) => node.color)
+      .attr("fill", (node: CommitNode) => node.hash === headCommitHash ? "#06b6d4" : node.color)
       .attr("stroke", (node: CommitNode) => {
         if (node.hash === selectedCommit) {
           return "#ffffff";
@@ -670,11 +784,20 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
         if (selectedCommits.includes(node.hash)) {
           return "#38bdf8";
         }
+        if (node.hash === headCommitHash) {
+          return "#06b6d4";
+        }
         return "#0f172a";
       })
-      .attr("stroke-width", (node: CommitNode) =>
-        node.hash === selectedCommit || selectedCommits.includes(node.hash) ? 2 : 1.5
-      )
+      .attr("stroke-width", (node: CommitNode) => {
+        if (node.hash === selectedCommit || selectedCommits.includes(node.hash)) {
+          return 2;
+        }
+        if (node.hash === headCommitHash) {
+          return 2;
+        }
+        return 1.5;
+      })
       .attr("opacity", 0)
       .transition()
       .duration(200)
@@ -695,30 +818,74 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
         if (selectedCommits.includes(node.hash)) {
           return node.color;
         }
+        if (node.hash === headCommitHash) {
+          return "#06b6d4";
+        }
         return "transparent";
       })
       .attr("stroke-width", 1)
-      .attr("opacity", (node: CommitNode) =>
-        node.hash === selectedCommit || selectedCommits.includes(node.hash) ? 0.3 : 0
-      );
+      .attr("opacity", (node: CommitNode) => {
+        if (node.hash === selectedCommit || selectedCommits.includes(node.hash)) {
+          return 0.3;
+        }
+        if (node.hash === headCommitHash) {
+          return 0.2;
+        }
+        return 0;
+      });
 
     const textGroup = nodeEnter.append("g").attr("transform", `translate(${NODE_RADIUS + 12}, 0)`);
 
-    textGroup
+    // Branches with background for current branch
+    const branchGroups = textGroup
       .filter((node: CommitNode) => node.branches.length > 0)
-      .append("text")
-      .attr("class", "commit-branches")
-      .attr("fill", "#94a3b8")
-      .attr("font-size", 11)
-      .attr("font-weight", 500)
-      .attr("y", -12)
-      .attr("dominant-baseline", "baseline")
-      .text((node: CommitNode) => node.branches.join(", "));
+      .append("g")
+      .attr("class", "branch-labels");
+
+    branchGroups.each(function(node: CommitNode) {
+      const group = d3.select(this);
+      const currentBranchName = currentBranch?.name;
+      const hasCurrentBranch = currentBranchName && node.branches.includes(currentBranchName);
+      
+      if (hasCurrentBranch) {
+        // Background rectangle for current branch
+        group.append("rect")
+          .attr("x", -3)
+          .attr("y", -22)
+          .attr("width", currentBranchName.length * 6.5 + 6) // Better width calculation
+          .attr("height", 14)
+          .attr("fill", "#06b6d4")
+          .attr("fill-opacity", 0.15)
+          .attr("rx", 3)
+          .attr("stroke", "#06b6d4")
+          .attr("stroke-width", 0.5)
+          .attr("stroke-opacity", 0.3);
+      }
+
+      // Branch text
+      group.append("text")
+        .attr("class", "commit-branches")
+        .attr("fill", "#94a3b8")
+        .attr("font-size", 11)
+        .attr("font-weight", 500)
+        .attr("y", hasCurrentBranch ? -15 : -16) // Center in rectangle when highlighted
+        .attr("dominant-baseline", hasCurrentBranch ? "middle" : "baseline")
+        .html(() => {
+          if (!currentBranch) return node.branches.join(", ");
+          
+          return node.branches.map(branch => {
+            if (branch === currentBranch.name) {
+              return `<tspan fill="#06b6d4" font-weight="600">${branch}</tspan>`;
+            }
+            return `<tspan>${branch}</tspan>`;
+          }).join(", ");
+        });
+    });
 
     const messageText = textGroup
       .append("text")
       .attr("class", "commit-message")
-      .attr("fill", "#e2e8f0")
+      .attr("fill", (node: CommitNode) => node.hash === headCommitHash ? "#06b6d4" : "#e2e8f0")
       .attr("font-size", 13)
       .attr("font-weight", (node: CommitNode) => {
         if (node.hash === selectedCommit) {
@@ -727,10 +894,13 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
         if (selectedCommits.includes(node.hash)) {
           return 500;
         }
+        if (node.hash === headCommitHash) {
+          return 500;
+        }
         return 400;
       })
-      .attr("y", (node: CommitNode) => (node.branches.length > 0 ? 4 : 0))
-      .attr("dominant-baseline", (node: CommitNode) => (node.branches.length > 0 ? "hanging" : "middle"))
+      .attr("y", 0)
+      .attr("dominant-baseline", "middle")
       .text((node: CommitNode) => node.message);
 
     messageText
@@ -738,11 +908,15 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
       .text((node: CommitNode) => `${node.hash}\n${node.author}\n${new Date(node.date).toLocaleString("fr-FR")}`);
   }, [
     buildRangeSelection,
+    checkout,
     closeContextMenu,
+    currentBranch,
     graph,
+    headCommitHash,
     layout.height,
     layout.width,
     nodeIndexMap,
+    resolveCheckoutBranch,
     selectCommit,
     selectedCommit,
     selectedCommits,
@@ -779,8 +953,17 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
         aria-label="Graphe des commits"
         style={{ display: 'block' }}
       />
+      {currentBranch && !isMultiSelectActive && (
+        <div className="pointer-events-auto absolute left-1/2 top-4 z-10 flex w-[min(300px,92%)] -translate-x-1/2 items-center gap-2 rounded-2xl border border-slate-700/70 bg-slate-900/95 px-4 py-3 text-xs text-slate-200 shadow-2xl backdrop-blur">
+          <GitBranch className="h-4 w-4 text-slate-400" />
+          <span className="text-slate-300">Branche actuelle :</span>
+          <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-[11px] font-semibold text-cyan-300">
+            {currentBranch.name}
+          </span>
+        </div>
+      )}
       {isMultiSelectActive && (
-        <div className="pointer-events-auto absolute left-1/2 top-4 z-10 flex w-[min(520px,92%)] -translate-x-1/2 flex-col gap-3 rounded-2xl border border-slate-700/70 bg-slate-900/95 px-5 py-4 text-xs text-slate-200 shadow-2xl backdrop-blur">
+        <div className="pointer-events-auto absolute left-1/2 top-16 z-10 flex w-[min(520px,92%)] -translate-x-1/2 flex-col gap-3 rounded-2xl border border-slate-700/70 bg-slate-900/95 px-5 py-4 text-xs text-slate-200 shadow-2xl backdrop-blur">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-slate-800 px-3 py-1 text-[11px] font-semibold text-slate-100">
               {actionableSelection.length} commit{actionableSelection.length > 1 ? "s" : ""} sélectionné{actionableSelection.length > 1 ? "s" : ""}
@@ -843,6 +1026,7 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
       )}
       {contextMenu && (
         <div
+          ref={contextMenuRef}
           role="menu"
           className="absolute z-20 w-56 rounded-xl border border-slate-700 bg-slate-800/95 p-2 text-sm text-slate-100 shadow-xl backdrop-blur"
           style={{ top: contextMenu.y, left: contextMenu.x }}

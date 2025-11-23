@@ -5,6 +5,7 @@ export type {
   CommitGraphData,
   CommitLink,
   CommitNode,
+  MergeConflictFile,
   RecentRepository,
   RepoSummary,
   BackendResponse

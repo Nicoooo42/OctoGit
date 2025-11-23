@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { FolderOpen, GitBranch, Download } from "lucide-react";
 import { useRepoContext } from "../context/RepoContext";
 import Loading from "../components/Loading";
+import Modal from "../components/Modal";
 
 const Home: React.FC = () => {
   const navigate = useNavigate();
@@ -12,6 +13,8 @@ const Home: React.FC = () => {
   const [clonePath, setClonePath] = useState("");
   const [cloneLoading, setCloneLoading] = useState(false);
   const [cloneError, setCloneError] = useState<string | null>(null);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     fetchRecents();
@@ -19,8 +22,8 @@ const Home: React.FC = () => {
 
   useEffect(() => {
     if (error) {
-      // eslint-disable-next-line no-alert
-      alert(error);
+      setErrorMessage(error);
+      setShowErrorModal(true);
       clearError();
     }
   }, [clearError, error]);
@@ -139,75 +142,99 @@ const Home: React.FC = () => {
         </div>
       </div>
 
+      {/* Modal d'erreur */}
+      <Modal
+        isOpen={showErrorModal}
+        title="Erreur"
+        onClose={() => setShowErrorModal(false)}
+        footer={
+          <button
+            type="button"
+            onClick={() => setShowErrorModal(false)}
+            className="flex-1 rounded-lg bg-cyan-600 px-4 py-2 text-sm text-white hover:bg-cyan-700"
+          >
+            OK
+          </button>
+        }
+      >
+        <p className="text-sm text-slate-300">{errorMessage}</p>
+      </Modal>
+
       {/* Modal de clone */}
-      {showCloneModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="w-full max-w-lg rounded-xl bg-slate-800 p-6 shadow-2xl">
-            <h2 className="text-xl font-bold mb-4 text-cyan-300">Cloner un dépôt Git</h2>
-            
-            <div className="mb-4">
-              <label htmlFor="cloneUrl" className="block mb-1 text-sm font-medium">
-                URL du dépôt
-              </label>
-              <input
-                id="cloneUrl"
-                type="text"
-                value={cloneUrl}
-                onChange={(e) => setCloneUrl(e.target.value)}
-                placeholder="https://gitlab.com/user/repo.git"
-                className="w-full border border-slate-600 bg-slate-900 rounded px-3 py-2 text-slate-100"
-              />
-            </div>
-
-            <div className="mb-4">
-              <label htmlFor="clonePath" className="block mb-1 text-sm font-medium">
-                Chemin de destination
-              </label>
-              <input
-                id="clonePath"
-                type="text"
-                value={clonePath}
-                onChange={(e) => setClonePath(e.target.value)}
-                placeholder="C:\Users\...\mon-projet"
-                className="w-full border border-slate-600 bg-slate-900 rounded px-3 py-2 text-slate-100"
-              />
-              <p className="text-xs text-slate-400 mt-1">
-                Le dossier sera créé automatiquement
-              </p>
-            </div>
-
-            {cloneError && (
-              <div className="mb-4 p-3 bg-red-900/30 text-red-300 rounded text-sm">
-                {cloneError}
-              </div>
-            )}
-
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={handleClone}
-                disabled={cloneLoading}
-                className="flex-1 bg-cyan-600 text-white px-4 py-2 rounded hover:bg-cyan-700 disabled:opacity-50"
-              >
-                {cloneLoading ? "Clonage en cours..." : "Cloner"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowCloneModal(false);
-                  setCloneError(null);
-                  setCloneUrl("");
-                  setClonePath("");
-                }}
-                disabled={cloneLoading}
-                className="flex-1 bg-slate-700 text-white px-4 py-2 rounded hover:bg-slate-600 disabled:opacity-50"
-              >
-                Annuler
-              </button>
-            </div>
+      <Modal
+        isOpen={showCloneModal}
+        title="Cloner un dépôt Git"
+        onClose={() => {
+          setShowCloneModal(false);
+          setCloneError(null);
+          setCloneUrl("");
+          setClonePath("");
+        }}
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setShowCloneModal(false);
+                setCloneError(null);
+                setCloneUrl("");
+                setClonePath("");
+              }}
+              disabled={cloneLoading}
+              className="flex-1 rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-600 disabled:opacity-50"
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              onClick={handleClone}
+              disabled={cloneLoading}
+              className="flex-1 rounded-lg bg-cyan-600 px-4 py-2 text-sm text-white hover:bg-cyan-700 disabled:opacity-50"
+            >
+              {cloneLoading ? "Clonage en cours..." : "Cloner"}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="cloneUrl" className="block mb-1 text-sm font-medium text-slate-100">
+              URL du dépôt
+            </label>
+            <input
+              id="cloneUrl"
+              type="text"
+              value={cloneUrl}
+              onChange={(e) => setCloneUrl(e.target.value)}
+              placeholder="https://gitlab.com/user/repo.git"
+              className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-100 placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+            />
           </div>
+
+          <div>
+            <label htmlFor="clonePath" className="block mb-1 text-sm font-medium text-slate-100">
+              Chemin de destination
+            </label>
+            <input
+              id="clonePath"
+              type="text"
+              value={clonePath}
+              onChange={(e) => setClonePath(e.target.value)}
+              placeholder="C:\Users\...\mon-projet"
+              className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-100 placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+            />
+            <p className="text-xs text-slate-400 mt-1">
+              Le dossier sera créé automatiquement
+            </p>
+          </div>
+
+          {cloneError && (
+            <div className="p-3 bg-red-900/30 text-red-300 rounded text-sm">
+              {cloneError}
+            </div>
+          )}
         </div>
-      )}
+      </Modal>
       {cloneLoading && <Loading message="Clonage du dépôt en cours..." />}
     </div>
   );
