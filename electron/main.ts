@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { BackendServer } from "../backend/server.js";
@@ -9,6 +10,7 @@ const __dirname = path.dirname(__filename);
 const isDev = process.env.NODE_ENV === "development";
 let mainWindow: BrowserWindow | null = null;
 let backend: BackendServer | null = null;
+let copilotServerProcess: ChildProcessWithoutNullStreams | null = null;
 
 type BackendResult<T> = { success: true; data: T } | { success: false; error: string };
 
@@ -32,7 +34,14 @@ function toMessage(error: unknown) {
 }
 
 async function createWindow() {
-  backend = new BackendServer(app.getPath("userData"));
+  backend = new BackendServer(app.getPath("userData"), {
+    onPeriodicFetch: (payload) => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return;
+      }
+      mainWindow.webContents.send("repo:periodic-fetch", payload);
+    }
+  });
 
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -74,6 +83,7 @@ async function createWindow() {
   }
 
   registerIpcHandlers();
+  await autoStartCopilotServerIfEnabled();
 }
 
 function registerIpcHandlers() {
@@ -238,18 +248,18 @@ function registerIpcHandlers() {
   ipcMain.handle(
     "gitlab:get-config",
     async (_event: IpcMainInvokeEvent, payload: { key: string }) =>
-      buildResponse(backend!.getGitLabConfig(payload.key))
+      buildResponse(Promise.resolve(backend!.getGitLabConfig(payload.key)))
   );
 
   ipcMain.handle(
     "gitlab:set-config",
     async (_event: IpcMainInvokeEvent, payload: { key: string; value: string }) =>
-      buildResponse(backend!.setGitLabConfig(payload.key, payload.value))
+      buildResponse(Promise.resolve(backend!.setGitLabConfig(payload.key, payload.value)))
   );
 
   ipcMain.handle(
     "gitlab:clear-config",
-    async () => buildResponse(backend!.clearGitLabConfig())
+    async () => buildResponse(Promise.resolve(backend!.clearGitLabConfig()))
   );
 
   ipcMain.handle(
@@ -276,25 +286,58 @@ function registerIpcHandlers() {
   );
 
   ipcMain.handle(
-    "ollama:get-config",
+    "copilot:get-config",
     async (_event: IpcMainInvokeEvent, payload: { key: string }) =>
-      buildResponse(Promise.resolve(backend!.getOllamaConfig(payload.key)))
+      buildResponse(Promise.resolve(backend!.getCopilotConfig(payload.key)))
   );
 
   ipcMain.handle(
-    "ollama:set-config",
+    "copilot:set-config",
     async (_event: IpcMainInvokeEvent, payload: { key: string; value: string }) =>
-      buildResponse(backend!.setOllamaConfig(payload.key, payload.value))
+      buildResponse(backend!.setCopilotConfig(payload.key, payload.value))
   );
 
   ipcMain.handle(
-    "ollama:clear-config",
-    async () => buildResponse(backend!.clearOllamaConfig())
+    "copilot:clear-config",
+    async () => buildResponse(backend!.clearCopilotConfig())
   );
 
   ipcMain.handle(
-    "ollama:generate-commit-message",
+    "copilot:generate-commit-message",
     async () => buildResponse(backend!.generateCommitMessage())
+  );
+
+  ipcMain.handle(
+    "copilot:generate-branch-name-suggestions",
+    async () => buildResponse(backend!.generateBranchNameSuggestions())
+  );
+
+  ipcMain.handle(
+    "copilot:suggest-git-command",
+    async (_event: IpcMainInvokeEvent, payload: { prompt: string }) =>
+      buildResponse(backend!.suggestGitCommand(payload.prompt))
+  );
+
+  ipcMain.handle(
+    "git:execute-command",
+    async (_event: IpcMainInvokeEvent, payload: { command: string }) =>
+      buildResponse(backend!.executeGitCommand(payload.command))
+  );
+
+  ipcMain.handle(
+    "ai-terminal:clear-session",
+    async () => buildResponse(backend!.clearAiTerminalSession())
+  );
+
+  ipcMain.handle(
+    "copilot:start-server",
+    async (_event: IpcMainInvokeEvent, payload: { port: number }) =>
+      buildResponse(startCopilotServer(payload.port))
+  );
+
+  ipcMain.handle(
+    "copilot:stop-server",
+    async () => buildResponse(stopCopilotServer())
   );
 
   ipcMain.handle(
@@ -319,6 +362,129 @@ function registerIpcHandlers() {
     async (_event: IpcMainInvokeEvent, payload: { repoUrl: string; localPath: string }) =>
       buildResponse(backend!.cloneRepository(payload.repoUrl, payload.localPath).then(result => openAndSnapshot(result.path)))
   );
+}
+
+function startCopilotServer(port: number): Promise<{ started: boolean; pid?: number; message?: string }> {
+  if (copilotServerProcess && !copilotServerProcess.killed) {
+    return Promise.resolve({
+      started: false,
+      pid: copilotServerProcess.pid ?? undefined,
+      message: "Copilot CLI server is already running"
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn("copilot", ["--server", "--port", String(port)], {
+      shell: true,
+      windowsHide: true
+    });
+
+    let resolved = false;
+
+    child.once("spawn", () => {
+      copilotServerProcess = child;
+      resolved = true;
+      resolve({ started: true, pid: child.pid ?? undefined });
+    });
+
+    child.once("error", (error) => {
+      if (!resolved) {
+        resolved = true;
+        reject(error);
+      }
+    });
+
+    child.once("exit", (code, signal) => {
+      if (copilotServerProcess === child) {
+        copilotServerProcess = null;
+      }
+      if (!resolved) {
+        resolved = true;
+        resolve({ started: false, message: `Copilot CLI exited (${code ?? signal ?? "unknown"})` });
+      }
+    });
+
+    child.stdout.on("data", (data) => {
+      console.log(`[copilot-cli] ${data.toString().trim()}`);
+    });
+
+    child.stderr.on("data", (data) => {
+      console.error(`[copilot-cli] ${data.toString().trim()}`);
+    });
+  });
+}
+
+/**
+ * Automatically starts the Copilot CLI server if the autostart option is enabled in config.
+ */
+async function autoStartCopilotServerIfEnabled(): Promise<void> {
+  if (!backend) return;
+
+  const enabled = backend.getCopilotConfig("enabled");
+  const autostart = backend.getCopilotConfig("server_autostart");
+
+  if (enabled !== "true" || autostart !== "true") {
+    return;
+  }
+
+  const cliUrl = backend.getCopilotConfig("cli_url") || "localhost:4321";
+  const port = parsePortFromUrl(cliUrl);
+
+  console.log(`[copilot-cli] Auto-starting Copilot CLI server on port ${port}...`);
+
+  try {
+    const result = await startCopilotServer(port);
+    if (result.started) {
+      console.log(`[copilot-cli] Auto-start successful (PID ${result.pid})`);
+    } else {
+      console.log(`[copilot-cli] Auto-start skipped: ${result.message}`);
+    }
+  } catch (error) {
+    console.error(`[copilot-cli] Auto-start failed:`, error);
+  }
+}
+
+/**
+ * Parses a port number from a URL string like "localhost:4321" or just "4321".
+ */
+function parsePortFromUrl(value: string): number {
+  const trimmed = value.trim();
+  if (!trimmed) return 4321;
+  const match = trimmed.match(/:(\d{2,5})$/);
+  if (match?.[1]) {
+    const parsed = Number(match[1]);
+    return Number.isFinite(parsed) ? parsed : 4321;
+  }
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : 4321;
+}
+
+function stopCopilotServer(): Promise<{ stopped: boolean; pid?: number; message?: string }> {
+  if (!copilotServerProcess || copilotServerProcess.killed) {
+    return Promise.resolve({ stopped: false, message: "Copilot CLI server is not running" });
+  }
+
+  const pid = copilotServerProcess.pid ?? undefined;
+  const processRef = copilotServerProcess;
+
+  return new Promise((resolve) => {
+    processRef.once("exit", () => {
+      if (copilotServerProcess === processRef) {
+        copilotServerProcess = null;
+      }
+      resolve({ stopped: true, pid });
+    });
+
+    try {
+      processRef.kill();
+    } catch (error) {
+      resolve({
+        stopped: false,
+        pid,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
 }
 
 ipcMain.handle("window:minimize", () => {

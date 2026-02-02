@@ -1,10 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Archive, Copy, GitBranch, GitCommit, GitMerge, Scissors, Trash2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import * as d3 from "d3";
 import { useRepoContext } from "../context/RepoContext";
 import type { CommitGraphData, CommitLink, CommitNode } from "../types/git";
 import InputModal from "./InputModal";
 import ConfirmModal from "./ConfirmModal";
+import {
+  buildRangeSelection as buildSelectionRange,
+  computeSelectionMeta,
+  createNodeIndexMap,
+  findBaseNode,
+  getSelectionIssue,
+  sortSelection
+} from "./commitGraph/selection";
 
 type ContextMenuState = {
   x: number;
@@ -24,6 +33,7 @@ const CONTEXT_MENU_MARGIN = 8;
 const BUFFER_ROWS = 20;
 
 const CommitGraph: React.FC = () => {
+  const { t } = useTranslation();
   const {
     graph,
     loading,
@@ -38,7 +48,8 @@ const CommitGraph: React.FC = () => {
     squashCommits,
     dropCommits,
     stashPop,
-    branches
+    branches,
+    generateBranchNameSuggestions
   } = useRepoContext();
   const svgRef = useRef<SVGSVGElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -115,42 +126,16 @@ const CommitGraph: React.FC = () => {
     return { laneCount, height, width };
   }, [graph]);
 
-  const nodeIndexMap = useMemo(() => {
-    if (!graph) {
-      return new Map<string, number>();
-    }
-    return new Map(graph.nodes.map((node, index) => [node.hash, index]));
-  }, [graph]);
+  const nodeIndexMap = useMemo(() => createNodeIndexMap(graph), [graph]);
 
-  const sortSelection = useCallback(
-    (hashes: string[]) => {
-      const unique = Array.from(new Set(hashes));
-      unique.sort((a, b) => {
-        const indexA = nodeIndexMap.get(a) ?? Number.POSITIVE_INFINITY;
-        const indexB = nodeIndexMap.get(b) ?? Number.POSITIVE_INFINITY;
-        return indexA - indexB;
-      });
-      return unique;
-    },
+  const sortWithIndex = useCallback(
+    (hashes: string[]) => sortSelection(hashes, nodeIndexMap),
     [nodeIndexMap]
   );
 
   const buildRangeSelection = useCallback(
-    (fromHash: string, toHash: string) => {
-      if (!graph) {
-        return [];
-      }
-      const fromIndex = nodeIndexMap.get(fromHash);
-      const toIndex = nodeIndexMap.get(toHash);
-      if (fromIndex === undefined || toIndex === undefined) {
-        return sortSelection([toHash]);
-      }
-      const start = Math.min(fromIndex, toIndex);
-      const end = Math.max(fromIndex, toIndex);
-      const range = graph.nodes.slice(start, end + 1).map((node) => node.hash);
-      return sortSelection(range);
-    },
-    [graph, nodeIndexMap, sortSelection]
+    (fromHash: string, toHash: string) => buildSelectionRange(graph, nodeIndexMap, fromHash, toHash),
+    [graph, nodeIndexMap]
   );
 
   useEffect(() => {
@@ -162,8 +147,8 @@ const CommitGraph: React.FC = () => {
   }, [selectedCommits]);
 
   const sanitizedSelection = useMemo(
-    () => sortSelection(selectedCommits.filter((hash) => hash !== "working-directory")),
-    [selectedCommits, sortSelection]
+    () => sortWithIndex(selectedCommits.filter((hash) => hash !== "working-directory")),
+    [selectedCommits, sortWithIndex]
   );
 
   const primarySelectedCommit = useMemo(() => {
@@ -225,79 +210,24 @@ const CommitGraph: React.FC = () => {
     [branches, currentBranch]
   );
 
-  const selectionMeta = useMemo(() => {
-    if (!graph || sanitizedSelection.length === 0) {
-      return {
-        sanitizedSelection: [] as string[],
-        includesHead: false,
-        isContiguous: false,
-        baseHash: null as string | null
-      };
-    }
-
-    const includesHead = headCommitHash ? sanitizedSelection[0] === headCommitHash : false;
-    
-    // Pour vérifier la contiguïté, on doit reproduire la logique du backend :
-    // partir de HEAD et suivre la chaîne first-parent jusqu'à trouver tous les commits sélectionnés
-    const selectedSet = new Set(sanitizedSelection);
-    let isContiguous = includesHead;
-    let current = headCommitHash;
-    let baseHash: string | null = null;
-
-    if (includesHead && current) {
-      // On parcourt la chaîne first-parent depuis HEAD
-      while (current && selectedSet.has(current)) {
-        selectedSet.delete(current);
-        
-        const currentIndex = nodeIndexMap.get(current);
-        if (currentIndex === undefined) {
-          isContiguous = false;
-          break;
-        }
-        
-        const currentNode = graph.nodes[currentIndex];
-        const firstParent = currentNode.parents[0];
-        
-        if (!firstParent) {
-          // On a atteint le commit racine
-          baseHash = null;
-          break;
-        }
-        
-        current = firstParent;
-        baseHash = firstParent;
-      }
-      
-      // S'il reste des commits dans selectedSet, ils ne sont pas dans la chaîne first-parent
-      if (selectedSet.size > 0) {
-        isContiguous = false;
-      }
-    } else {
-      isContiguous = false;
-      // Calculer le baseHash même si pas continu (pour l'affichage)
-      const lastHash = sanitizedSelection[sanitizedSelection.length - 1];
-      const lastIndex = nodeIndexMap.get(lastHash);
-      baseHash = lastIndex !== undefined ? graph.nodes[lastIndex].parents[0] ?? null : null;
-    }
-
-    return {
-      sanitizedSelection,
-      includesHead,
-      isContiguous,
-      baseHash
-    };
-  }, [graph, headCommitHash, nodeIndexMap, sanitizedSelection]);
+  const selectionMeta = useMemo(
+    () =>
+      computeSelectionMeta({
+        graph,
+        sanitizedSelection,
+        headCommitHash,
+        nodeIndexMap
+      }),
+    [graph, sanitizedSelection, headCommitHash, nodeIndexMap]
+  );
 
   const actionableSelection = selectionMeta.sanitizedSelection;
   const selectionBaseHash = selectionMeta.baseHash;
 
-  const baseNode = useMemo(() => {
-    if (!graph || !selectionMeta.baseHash) {
-      return null;
-    }
-    const index = nodeIndexMap.get(selectionMeta.baseHash);
-    return index !== undefined ? graph.nodes[index] : null;
-  }, [graph, nodeIndexMap, selectionMeta.baseHash]);
+  const baseNode = useMemo(
+    () => findBaseNode(graph, nodeIndexMap, selectionMeta.baseHash),
+    [graph, nodeIndexMap, selectionMeta.baseHash]
+  );
 
   const hasWorkingDirectorySelected = selectedCommits.includes("working-directory");
 
@@ -323,29 +253,10 @@ const CommitGraph: React.FC = () => {
     return sanitizedSelection.some((hash) => hash !== primarySelectedCommit);
   }, [primarySelectedCommit, sanitizedSelection]);
 
-  const selectionIssue = useMemo(() => {
-    if (hasWorkingDirectorySelected && actionableSelection.length === 0) {
-      return "Le répertoire de travail ne peut pas être inclus dans cette opération.";
-    }
-
-    if (actionableSelection.length === 0) {
-      return "Sélectionnez les commits à réécrire en commençant par HEAD.";
-    }
-
-    if (!selectionMeta.includesHead) {
-      return "La sélection doit inclure le commit HEAD (le plus récent).";
-    }
-
-    if (!selectionMeta.isContiguous) {
-      return "Les commits doivent suivre la même branche (first-parent) sans trou.";
-    }
-
-    if (!selectionBaseHash) {
-      return "Impossible de modifier le tout premier commit du dépôt.";
-    }
-
-    return null;
-  }, [hasWorkingDirectorySelected, sanitizedSelection.length, selectionMeta]);
+  const selectionIssue = useMemo(
+    () => getSelectionIssue(selectionMeta, hasWorkingDirectorySelected),
+    [selectionMeta, hasWorkingDirectorySelected]
+  );
 
   const squashDefaultMessage = useMemo(() => {
     if (selectedNodes.length === 0) {
@@ -497,17 +408,22 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
   );
 
   const handleApplyStash = useCallback(
-    async () => {
-      const shouldApply = window.confirm("Appliquer le stash ?");
+    () => {
       closeContextMenu();
-      if (!shouldApply) {
-        return;
-      }
-      await stashPop();
+      setConfirmModal({
+        isOpen: true,
+        title: t("confirmations.applyStash.title"),
+        message: t("confirmations.applyStash.message"),
+        onConfirm: async () => {
+          setConfirmModal(null);
+          await stashPop();
+        }
+      });
     },
-    [closeContextMenu, stashPop]
+    [closeContextMenu, stashPop, t]
   );
 
+  // Virtualize the SVG by computing which rows are visible inside the scroll container.
   const updateVisibleRange = useCallback(() => {
     const container = containerRef.current;
     if (!container || !graph) {
@@ -565,6 +481,7 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
     updateVisibleRange();
   }, [closeContextMenu, updateVisibleRange]);
 
+  // Re-render the graph slice with d3 whenever the data or virtualization window changes.
   useEffect(() => {
     if (!graph || !svgRef.current) {
       if (svgRef.current) {
@@ -674,6 +591,7 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
         const hash = node.hash;
         const timer = clickTimerRef.current;
 
+        // Manage double-click manually so we can keep fine-grained control on modifier keys.
         if (lastClickedNodeRef.current?.hash === hash && timer !== null) {
           window.clearTimeout(timer);
           clickTimerRef.current = null;
@@ -706,7 +624,7 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
           if (isShift) {
             const anchor = selectionAnchor ?? selectedCommits[0] ?? hash;
             const range = buildRangeSelection(anchor, hash);
-            const nextSelection = range.length > 0 ? range : sortSelection([hash]);
+            const nextSelection = range.length > 0 ? range : sortWithIndex([hash]);
             setSelectedCommits(nextSelection);
             setSelectionAnchor(anchor);
             void selectCommit(hash, { preserveMultiSelection: true });
@@ -727,7 +645,7 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
                 void selectCommit(null);
               }
             } else {
-              const nextSelection = sortSelection([...selectedCommits, hash]);
+              const nextSelection = sortWithIndex([...selectedCommits, hash]);
               setSelectedCommits(nextSelection);
               setSelectionAnchor(hash);
               void selectCommit(hash, { preserveMultiSelection: true });
@@ -735,7 +653,7 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
             return;
           }
 
-          const nextSelection = sortSelection([hash]);
+          const nextSelection = sortWithIndex([hash]);
           setSelectedCommits(nextSelection);
           setSelectionAnchor(hash);
           void selectCommit(hash);
@@ -765,7 +683,7 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
         setContextMenu({ x, y, commit: node });
         const shouldPreserve = selectedCommits.includes(node.hash) && selectedCommits.length > 1;
         if (!shouldPreserve) {
-          setSelectedCommits(sortSelection([node.hash]));
+          setSelectedCommits(sortWithIndex([node.hash]));
           setSelectionAnchor(node.hash);
         }
         void selectCommit(node.hash, { preserveMultiSelection: shouldPreserve });
@@ -836,50 +754,51 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
 
     const textGroup = nodeEnter.append("g").attr("transform", `translate(${NODE_RADIUS + 12}, 0)`);
 
-    // Branches with background for current branch
+    // Branch labels displayed inline before commit message
     const branchGroups = textGroup
       .filter((node: CommitNode) => node.branches.length > 0)
       .append("g")
-      .attr("class", "branch-labels");
+      .attr("class", "branch-labels")
+      .style("pointer-events", "none");
 
     branchGroups.each(function(node: CommitNode) {
       const group = d3.select(this);
       const currentBranchName = currentBranch?.name;
-      const hasCurrentBranch = currentBranchName && node.branches.includes(currentBranchName);
       
-      if (hasCurrentBranch) {
-        // Background rectangle for current branch
+      // Display branches inline with badges
+      let xOffset = 0;
+      node.branches.forEach((branch, index) => {
+        const isCurrent = branch === currentBranchName;
+        const textWidth = branch.length * 6.5 + 10;
+        
+        // Background rectangle (badge style) - no fill to avoid hiding graph lines
         group.append("rect")
-          .attr("x", -3)
-          .attr("y", -22)
-          .attr("width", currentBranchName.length * 6.5 + 6) // Better width calculation
-          .attr("height", 14)
-          .attr("fill", "#06b6d4")
-          .attr("fill-opacity", 0.15)
+          .attr("x", xOffset)
+          .attr("y", -8)
+          .attr("width", textWidth)
+          .attr("height", 16)
+          .attr("fill", "none")
           .attr("rx", 3)
-          .attr("stroke", "#06b6d4")
-          .attr("stroke-width", 0.5)
-          .attr("stroke-opacity", 0.3);
-      }
+          .attr("stroke", isCurrent ? "#06b6d4" : "#475569")
+          .attr("stroke-width", 1)
+          .attr("stroke-opacity", isCurrent ? 0.8 : 0.4);
 
-      // Branch text
-      group.append("text")
-        .attr("class", "commit-branches")
-        .attr("fill", "#94a3b8")
-        .attr("font-size", 11)
-        .attr("font-weight", 500)
-        .attr("y", hasCurrentBranch ? -15 : -16) // Center in rectangle when highlighted
-        .attr("dominant-baseline", hasCurrentBranch ? "middle" : "baseline")
-        .html(() => {
-          if (!currentBranch) return node.branches.join(", ");
-          
-          return node.branches.map(branch => {
-            if (branch === currentBranch.name) {
-              return `<tspan fill="#06b6d4" font-weight="600">${branch}</tspan>`;
-            }
-            return `<tspan>${branch}</tspan>`;
-          }).join(", ");
-        });
+        // Branch text
+        group.append("text")
+          .attr("class", "commit-branches")
+          .attr("fill", isCurrent ? "#06b6d4" : "#94a3b8")
+          .attr("font-size", 10)
+          .attr("font-weight", isCurrent ? 600 : 500)
+          .attr("x", xOffset + 5)
+          .attr("y", 0)
+          .attr("dominant-baseline", "middle")
+          .text(branch);
+
+        xOffset += textWidth + 4;
+      });
+
+      // Store total width for message offset
+      group.attr("data-width", xOffset);
     });
 
     const messageText = textGroup
@@ -901,6 +820,12 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
       })
       .attr("y", 0)
       .attr("dominant-baseline", "middle")
+      .attr("x", (node: CommitNode) => {
+        // Offset message after branch labels
+        if (node.branches.length === 0) return 0;
+        const totalWidth = node.branches.reduce((acc, branch) => acc + branch.length * 6.5 + 14, 0);
+        return totalWidth;
+      })
       .text((node: CommitNode) => node.message);
 
     messageText
@@ -923,7 +848,7 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
     selectionAnchor,
     setSelectedCommits,
     setSelectionAnchor,
-    sortSelection,
+    sortWithIndex,
     visibleRange
   ]);
 
@@ -936,32 +861,35 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
   }
 
   return (
-    <div
-      ref={containerCallbackRef}
-  className="relative flex-1 overflow-auto bg-slate-900"
-      onScroll={handleScroll}
-      onContextMenu={(event) => {
-        if (!event.defaultPrevented) {
-          closeContextMenu();
-        }
-      }}
-      style={{ width: '100%', height: '100%', maxWidth: '100%' }}
-    >
-      <svg 
-        ref={svgRef} 
-        role="img" 
-        aria-label="Graphe des commits"
-        style={{ display: 'block' }}
-      />
+    <div className="flex h-full flex-1 flex-col bg-slate-900">
       {currentBranch && !isMultiSelectActive && (
-        <div className="pointer-events-auto absolute left-1/2 top-4 z-10 flex w-[min(300px,92%)] -translate-x-1/2 items-center gap-2 rounded-2xl border border-slate-700/70 bg-slate-900/95 px-4 py-3 text-xs text-slate-200 shadow-2xl backdrop-blur">
-          <GitBranch className="h-4 w-4 text-slate-400" />
-          <span className="text-slate-300">Branche actuelle :</span>
-          <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-[11px] font-semibold text-cyan-300">
-            {currentBranch.name}
-          </span>
+        <div className="flex items-center justify-center px-4 pt-4">
+          <div className="pointer-events-auto flex w-[min(320px,92%)] items-center gap-2 rounded-2xl border border-slate-700/70 bg-slate-900/95 px-4 py-3 text-xs text-slate-200 shadow-2xl backdrop-blur">
+            <GitBranch className="h-4 w-4 text-slate-400" />
+            <span className="text-slate-300">Branche actuelle :</span>
+            <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-[11px] font-semibold text-cyan-300">
+              {currentBranch.name}
+            </span>
+          </div>
         </div>
       )}
+      <div
+        ref={containerCallbackRef}
+        className="relative flex-1 overflow-auto bg-slate-900"
+        onScroll={handleScroll}
+        onContextMenu={(event) => {
+          if (!event.defaultPrevented) {
+            closeContextMenu();
+          }
+        }}
+        style={{ width: "100%", height: "100%", maxWidth: "100%" }}
+      >
+        <svg 
+          ref={svgRef} 
+          role="img" 
+          aria-label="Graphe des commits"
+          style={{ display: "block" }}
+        />
       {isMultiSelectActive && (
         <div className="pointer-events-auto absolute left-1/2 top-16 z-10 flex w-[min(520px,92%)] -translate-x-1/2 flex-col gap-3 rounded-2xl border border-slate-700/70 bg-slate-900/95 px-5 py-4 text-xs text-slate-200 shadow-2xl backdrop-blur">
           <div className="flex flex-wrap items-center gap-2">
@@ -1115,14 +1043,16 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
         checkboxLabel="Basculer sur la nouvelle branche"
         onConfirm={handleBranchModalConfirm}
         onCancel={handleBranchModalCancel}
+        onGenerateSuggestions={generateBranchNameSuggestions}
       />
-      <ConfirmModal
-        isOpen={confirmModal?.isOpen ?? false}
-        title={confirmModal?.title ?? ""}
-        message={confirmModal?.message ?? ""}
-        onConfirm={confirmModal?.onConfirm ?? (() => {})}
-        onCancel={() => setConfirmModal(null)}
-      />
+        <ConfirmModal
+          isOpen={confirmModal?.isOpen ?? false}
+          title={confirmModal?.title ?? ""}
+          message={confirmModal?.message ?? ""}
+          onConfirm={confirmModal?.onConfirm ?? (() => {})}
+          onCancel={() => setConfirmModal(null)}
+        />
+      </div>
     </div>
   );
 };

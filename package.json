@@ -26,12 +26,18 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@github/copilot-sdk": "^0.1.20",
     "@monaco-editor/react": "^4.7.0",
     "better-sqlite3": "^9.4.3",
     "d3": "^7.9.0",
+    "i18next": "^23.11.5",
+    "i18next-browser-languagedetector": "^7.2.0",
     "lucide-react": "^0.428.0",
+    "pino": "^9.6.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-i18next": "^15.1.4",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^6.22.3",
     "simple-git": "^3.22.0",
     "smart-buffer": "^4.2.0"

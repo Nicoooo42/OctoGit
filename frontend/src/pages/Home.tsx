@@ -1,12 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FolderOpen, GitBranch, Download } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useRepoContext } from "../context/RepoContext";
 import Loading from "../components/Loading";
 import Modal from "../components/Modal";
+import { getBciGit } from "../utils/bciGit";
 
 const Home: React.FC = () => {
   const navigate = useNavigate();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage ?? i18n.language ?? "en";
   const { recents, fetchRecents, openRepoFromDialog, openRepoAtPath, loading, error, clearError } = useRepoContext();
   const [showCloneModal, setShowCloneModal] = useState(false);
   const [cloneUrl, setCloneUrl] = useState("");
@@ -44,27 +48,25 @@ const Home: React.FC = () => {
 
   const handleClone = async () => {
     if (!cloneUrl.trim() || !clonePath.trim()) {
-      setCloneError("Veuillez renseigner l'URL et le chemin de destination.");
+      setCloneError(t("home.cloneMissingFields"));
       return;
     }
 
     setCloneLoading(true);
     setCloneError(null);
     try {
-      if (!window.BciGit) {
-        throw new Error("API non disponible");
-      }
-      const result = await window.BciGit.cloneRepository(cloneUrl, clonePath);
+      const bciGit = getBciGit();
+      const result = await bciGit.cloneRepository(cloneUrl, clonePath);
       if (result.success) {
         setShowCloneModal(false);
         setCloneUrl("");
         setClonePath("");
         navigate("/repo");
       } else {
-        setCloneError(result.error || "Erreur lors du clone");
+        setCloneError(result.error || t("home.cloneDefaultError"));
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Erreur lors du clone";
+      const message = e instanceof Error ? e.message : t("home.cloneDefaultError");
       setCloneError(message);
     } finally {
       setCloneLoading(false);
@@ -79,8 +81,8 @@ const Home: React.FC = () => {
             <GitBranch className="h-8 w-8" />
           </div>
           <div>
-            <h1 className="text-3xl font-semibold text-white">BciGit</h1>
-            <p className="text-sm text-slate-400">Votre cockpit Git moderne, inspiré par GitKraken.</p>
+            <h1 className="text-3xl font-semibold text-white">{t("common.appName")}</h1>
+            <p className="text-sm text-slate-400">{t("home.heroSubtitle")}</p>
           </div>
         </div>
 
@@ -92,7 +94,7 @@ const Home: React.FC = () => {
             className="flex items-center justify-center gap-3 rounded-xl bg-cyan-500/20 py-3 text-cyan-300 transition hover:bg-cyan-500/30 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <FolderOpen className="h-5 w-5" />
-            Ouvrir un dépôt
+            {t("home.openRepo")}
           </button>
 
           <button
@@ -102,18 +104,18 @@ const Home: React.FC = () => {
             className="flex items-center justify-center gap-3 rounded-xl bg-orange-500/20 py-3 text-orange-300 transition hover:bg-orange-500/30 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Download className="h-5 w-5" />
-            Cloner un dépôt
+            {t("home.cloneRepo")}
           </button>
 
           <div>
             <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-500">
-              <span>Dépôts récents</span>
-              <span>{recents.length} trouvé(s)</span>
+              <span>{t("home.recentsTitle")}</span>
+              <span>{t("home.recentsCount", { count: recents.length })}</span>
             </div>
             <div className="mt-3 space-y-2">
               {recents.length === 0 && (
                 <p className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-500">
-                  Aucun dépôt pour l'instant. Ouvrez votre premier dépôt pour commencer.
+                  {t("home.recentsEmpty")}
                 </p>
               )}
               {recents.map((repo) => (
@@ -128,12 +130,12 @@ const Home: React.FC = () => {
                     <p className="text-xs text-slate-500">{repo.path}</p>
                   </div>
                   <span className="text-xs text-slate-500">
-                    {new Date(repo.lastOpened).toLocaleString("fr-FR", {
+                    {new Intl.DateTimeFormat(locale, {
                       day: "2-digit",
                       month: "short",
                       hour: "2-digit",
                       minute: "2-digit"
-                    })}
+                    }).format(new Date(repo.lastOpened))}
                   </span>
                 </button>
               ))}
@@ -145,7 +147,7 @@ const Home: React.FC = () => {
       {/* Modal d'erreur */}
       <Modal
         isOpen={showErrorModal}
-        title="Erreur"
+        title={t("home.errorTitle")}
         onClose={() => setShowErrorModal(false)}
         footer={
           <button
@@ -153,7 +155,7 @@ const Home: React.FC = () => {
             onClick={() => setShowErrorModal(false)}
             className="flex-1 rounded-lg bg-cyan-600 px-4 py-2 text-sm text-white hover:bg-cyan-700"
           >
-            OK
+            {t("common.ok")}
           </button>
         }
       >
@@ -163,7 +165,7 @@ const Home: React.FC = () => {
       {/* Modal de clone */}
       <Modal
         isOpen={showCloneModal}
-        title="Cloner un dépôt Git"
+        title={t("home.cloneModalTitle")}
         onClose={() => {
           setShowCloneModal(false);
           setCloneError(null);
@@ -183,7 +185,7 @@ const Home: React.FC = () => {
               disabled={cloneLoading}
               className="flex-1 rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-600 disabled:opacity-50"
             >
-              Annuler
+              {t("common.cancel")}
             </button>
             <button
               type="button"
@@ -191,7 +193,7 @@ const Home: React.FC = () => {
               disabled={cloneLoading}
               className="flex-1 rounded-lg bg-cyan-600 px-4 py-2 text-sm text-white hover:bg-cyan-700 disabled:opacity-50"
             >
-              {cloneLoading ? "Clonage en cours..." : "Cloner"}
+              {cloneLoading ? t("home.cloneButtonLoading") : t("home.cloneButton")}
             </button>
           </>
         }
@@ -199,32 +201,32 @@ const Home: React.FC = () => {
         <div className="space-y-4">
           <div>
             <label htmlFor="cloneUrl" className="block mb-1 text-sm font-medium text-slate-100">
-              URL du dépôt
+              {t("home.cloneUrlLabel")}
             </label>
             <input
               id="cloneUrl"
               type="text"
               value={cloneUrl}
               onChange={(e) => setCloneUrl(e.target.value)}
-              placeholder="https://gitlab.com/user/repo.git"
+              placeholder={t("home.cloneUrlPlaceholder")}
               className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-100 placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
             />
           </div>
 
           <div>
             <label htmlFor="clonePath" className="block mb-1 text-sm font-medium text-slate-100">
-              Chemin de destination
+              {t("home.clonePathLabel")}
             </label>
             <input
               id="clonePath"
               type="text"
               value={clonePath}
               onChange={(e) => setClonePath(e.target.value)}
-              placeholder="C:\Users\...\mon-projet"
+              placeholder={t("home.clonePathPlaceholder")}
               className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-100 placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
             />
             <p className="text-xs text-slate-400 mt-1">
-              Le dossier sera créé automatiquement
+              {t("home.cloneHelper")}
             </p>
           </div>
 
@@ -235,7 +237,7 @@ const Home: React.FC = () => {
           )}
         </div>
       </Modal>
-      {cloneLoading && <Loading message="Clonage du dépôt en cours..." />}
+      {cloneLoading && <Loading message={t("home.loadingOverlay")} />}
     </div>
   );
 };

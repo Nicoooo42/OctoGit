@@ -3,10 +3,16 @@ import fs from "node:fs";
 import Database from "better-sqlite3";
 import type { RecentRepository } from "../shared/git.js";
 
+/**
+ * Maintains the list of recently opened repositories in a local SQLite DB.
+ */
 export class RecentRepoStore {
   private readonly dbPath: string;
   private readonly db: Database.Database;
 
+  /**
+   * Initializes the database connection and ensures the schema exists.
+   */
   constructor(storageDir: string) {
     if (!fs.existsSync(storageDir)) {
       fs.mkdirSync(storageDir, { recursive: true });
@@ -17,6 +23,9 @@ export class RecentRepoStore {
     this.prepare();
   }
 
+  /**
+   * Creates the table schema if missing.
+   */
   private prepare() {
     this.db
       .prepare(
@@ -29,6 +38,9 @@ export class RecentRepoStore {
       .run();
   }
 
+  /**
+   * Returns the most recently opened repositories.
+   */
   list(limit = 10): RecentRepository[] {
     const stmt = this.db.prepare(
       `SELECT path, name, last_opened as lastOpened
@@ -40,6 +52,9 @@ export class RecentRepoStore {
     return stmt.all(limit) as RecentRepository[];
   }
 
+  /**
+   * Inserts or updates a repository entry with the current timestamp.
+   */
   touch(repoPath: string) {
     const name = path.basename(repoPath);
     const now = Date.now();

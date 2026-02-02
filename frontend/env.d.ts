@@ -1,6 +1,8 @@
 /// <reference types="vite/client" />
 
 import type {
+  AiTerminalExecuteResult,
+  AiTerminalSuggestion,
   BranchInfo,
   CommitDetails,
   CommitGraphData,
@@ -22,6 +24,7 @@ declare global {
       getRecentRepositories(): Promise<BackendResponse<RecentRepository[]>>;
       openRepositoryDialog(): Promise<BackendResponse<RepoSnapshot>>;
       openRepository(path: string): Promise<BackendResponse<RepoSnapshot>>;
+      cloneRepository(url: string, destination: string): Promise<BackendResponse<RepoSnapshot>>;
       getBranches(): Promise<BackendResponse<BranchInfo[]>>;
       getCommitGraph(): Promise<BackendResponse<CommitGraphData>>;
       getCommitDetails(hash: string): Promise<BackendResponse<CommitDetails>>;
@@ -56,13 +59,20 @@ declare global {
       stageFile(filePath: string): Promise<BackendResponse<unknown>>;
       resolveConflict(filePath: string, strategy: "ours" | "theirs"): Promise<BackendResponse<unknown>>;
       saveConflictResolution(filePath: string, content: string, stage?: boolean): Promise<BackendResponse<unknown>>;
-      getOllamaConfig(key: string): Promise<BackendResponse<string>>;
-      setOllamaConfig(key: string, value: string): Promise<BackendResponse<unknown>>;
-      clearOllamaConfig(): Promise<BackendResponse<unknown>>;
+      getCopilotConfig(key: string): Promise<BackendResponse<string>>;
+      setCopilotConfig(key: string, value: string): Promise<BackendResponse<unknown>>;
+      clearCopilotConfig(): Promise<BackendResponse<unknown>>;
       generateCommitMessage(): Promise<BackendResponse<{ title: string; description: string }>>;
+      generateBranchNameSuggestions(): Promise<BackendResponse<string[]>>;
+      suggestGitCommand(prompt: string): Promise<BackendResponse<AiTerminalSuggestion>>;
+      executeGitCommand(command: string): Promise<BackendResponse<AiTerminalExecuteResult>>;
+      clearAiTerminalSession(): Promise<BackendResponse<unknown>>;
+      startCopilotServer(port: number): Promise<BackendResponse<{ started: boolean; pid?: number; message?: string }>>;
+      stopCopilotServer(): Promise<BackendResponse<{ stopped: boolean; pid?: number; message?: string }>>;
       getAppConfig(key: string): Promise<BackendResponse<string>>;
       setAppConfig(key: string, value: string): Promise<BackendResponse<unknown>>;
       clearAppConfig(): Promise<BackendResponse<unknown>>;
+      onPeriodicFetch(handler: (payload: { success: boolean; error?: string }) => void): () => void;
       minimizeWindow(): Promise<void>;
       maximizeWindow(): Promise<void>;
       closeWindow(): Promise<void>;

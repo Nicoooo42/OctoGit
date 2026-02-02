@@ -56,6 +56,8 @@ type RepoContextValue = {
   setSelectedCommits: (hashes: string[]) => void;
   loadDiff: (filePath: string, options?: { scope?: DiffScope }) => Promise<void>;
   getWorkingDirStatus: () => Promise<unknown>;
+  generateBranchNameSuggestions: () => Promise<string[]>;
+  generateCommitMessage: () => Promise<{ title: string; description: string }>;
   commit: (message: string) => Promise<void>;
   checkout: (branch: string) => Promise<void>;
   createBranch: (name: string, base?: string) => Promise<void>;
@@ -140,6 +142,19 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setGraph(snapshot.commits);
       setBranches(snapshot.branches);
       setConflicts([]);
+
+      // Load working directory status immediately so commit/stage actions work without clicking on Working Directory
+      try {
+        const [workingDirData, conflictsData] = await Promise.all([
+          unwrap(getBciGitApi().getWorkingDirStatus()),
+          unwrap<MergeConflictFile[]>(getBciGitApi().getMergeConflicts())
+        ]);
+        setWorkingDirStatus(workingDirData);
+        setConflicts(conflictsData);
+      } catch {
+        // Non-critical: working dir status will be loaded on first interaction
+      }
+
       const initialHash = snapshot.commits.nodes[0]?.hash ?? null;
       setSelectedCommit(initialHash);
       setSelectedCommitsState(initialHash ? [initialHash] : []);
@@ -218,11 +233,10 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [fetchRecents, handleError, loadSnapshot]
   );
 
-  const refreshAll = useCallback(async () => {
+  const refreshGraphAndStatus = useCallback(async () => {
     if (!repo) {
       return;
     }
-    setLoading(true);
     try {
       const [branchesData, graphData, workingDirData, conflictsData] = await Promise.all([
         unwrap(getBciGitApi().getBranches()),
@@ -234,6 +248,18 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setGraph(graphData);
       setWorkingDirStatus(workingDirData);
       setConflicts(conflictsData);
+    } catch (err) {
+      handleError(err);
+    }
+  }, [handleError, repo]);
+
+  const refreshAll = useCallback(async () => {
+    if (!repo) {
+      return;
+    }
+    setLoading(true);
+    try {
+      await refreshGraphAndStatus();
       if (selectedCommit) {
         await selectCommitInternal(selectedCommit);
       }
@@ -242,7 +268,7 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setLoading(false);
     }
-  }, [handleError, repo, selectCommitInternal, selectedCommit]);
+  }, [handleError, repo, refreshGraphAndStatus, selectCommitInternal, selectedCommit]);
 
   const loadDiff = useCallback(
     async (filePath: string, options?: { scope?: DiffScope }) => {
@@ -276,6 +302,20 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const getWorkingDirStatus = useCallback(
     async () => {
       return unwrap(getBciGitApi().getWorkingDirStatus());
+    },
+    []
+  );
+
+  const generateBranchNameSuggestions = useCallback(
+    async () => {
+      return unwrap(getBciGitApi().generateBranchNameSuggestions());
+    },
+    []
+  );
+
+  const generateCommitMessage = useCallback(
+    async () => {
+      return unwrap(getBciGitApi().generateCommitMessage());
     },
     []
   );
@@ -331,9 +371,17 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteBranch = useCallback(
     async (name: string, force = false) => {
-      await gitAction(async () => unwrap(getBciGitApi().deleteBranch(name, force)));
+      setLoading(true);
+      try {
+        await unwrap(getBciGitApi().deleteBranch(name, force));
+        await refreshAll();
+      } finally {
+        setLoading(false);
+      }
+      // Note: errors are NOT caught here so they can be handled by the caller
+      // for special cases like "branch not fully merged"
     },
-    [gitAction]
+    [refreshAll]
   );
 
   const pull = useCallback(
@@ -352,9 +400,14 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetch = useCallback(
     async (remote?: string) => {
-      await gitAction(async () => unwrap(getBciGitApi().fetch(remote)));
+      try {
+        await unwrap(getBciGitApi().fetch(remote));
+        await refreshGraphAndStatus();
+      } catch (err) {
+        handleError(err);
+      }
     },
-    [gitAction]
+    [handleError, refreshGraphAndStatus]
   );
 
   const merge = useCallback(
@@ -506,6 +559,29 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [repo]);
 
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.BciGit?.onPeriodicFetch) {
+      return;
+    }
+
+    let cancelled = false;
+    const unsubscribe = window.BciGit.onPeriodicFetch((payload) => {
+      if (cancelled) {
+        return;
+      }
+      if (payload.success) {
+        void refreshGraphAndStatus();
+      } else if (payload.error) {
+        console.error("[BciGit] Periodic fetch failed", payload.error);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [refreshGraphAndStatus]);
+
   const value = useMemo<RepoContextValue>(
     () => ({
       repo,
@@ -529,6 +605,8 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSelectedCommits,
       loadDiff,
       getWorkingDirStatus,
+      generateBranchNameSuggestions,
+      generateCommitMessage,
       commit,
       checkout,
       createBranch,
@@ -569,6 +647,8 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       fetch,
       fetchRecents,
       getWorkingDirStatus,
+      generateBranchNameSuggestions,
+      generateCommitMessage,
       graph,
       loadConflicts,
       loadDiff,

@@ -1,4 +1,5 @@
 import React, { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import Modal from "./Modal";
 
 interface ConfirmModalProps {
@@ -20,6 +21,9 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
   onConfirm,
   onCancel,
 }) => {
+  const { t } = useTranslation();
+  const finalConfirmLabel = confirmLabel ?? t("common.confirm");
+  const finalCancelLabel = cancelLabel ?? t("common.cancel");
   useEffect(() => {
     if (isOpen) {
       const handleKeyDown = (e: KeyboardEvent) => {
@@ -44,14 +48,14 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
             onClick={onCancel}
             className="flex-1 rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-600"
           >
-            {cancelLabel}
+            {finalCancelLabel}
           </button>
           <button
             type="button"
             onClick={onConfirm}
             className="flex-1 rounded-lg bg-cyan-600 px-4 py-2 text-sm text-white hover:bg-cyan-700"
           >
-            {confirmLabel}
+            {finalConfirmLabel}
           </button>
         </>
       }

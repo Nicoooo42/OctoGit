@@ -8,6 +8,7 @@ import RepoView from "./pages/RepoView";
 import DiffView from "./pages/DiffView";
 import Config from "./pages/Config";
 import Conflicts from "./pages/Conflicts";
+import AiTerminal from "./pages/AiTerminal";
 
 const AppContent: React.FC = () => {
   const { loading } = useRepoContext();
@@ -22,6 +23,7 @@ const AppContent: React.FC = () => {
           <Route path="/repo/diff/:commitHash" element={<DiffView />} />
           <Route path="/repo/conflicts" element={<Conflicts />} />
           <Route path="/config" element={<Config />} />
+          <Route path="/ai-terminal" element={<AiTerminal />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

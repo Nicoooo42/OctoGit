@@ -2,15 +2,15 @@ import path from "node:path";
 import { JsonStore } from "./jsonStore.js";
 
 /**
- * Persists application-level configuration values under a JSON file.
+ * Persists Copilot configuration values on disk.
  */
-export class AppStore extends JsonStore<Record<string, unknown>> {
+export class CopilotStore extends JsonStore<Record<string, unknown>> {
   constructor(storageDir: string) {
-    super(path.join(storageDir, "app-config.json"));
+    super(path.join(storageDir, "copilot-config.json"));
   }
 
   /**
-   * Stores a configuration value by key.
+   * Stores a Copilot configuration value by key.
    */
   setConfig(key: string, value: string) {
     this.ensureConfigFile();
@@ -20,7 +20,7 @@ export class AppStore extends JsonStore<Record<string, unknown>> {
   }
 
   /**
-   * Retrieves a configuration value as a string (empty when unset).
+   * Retrieves a Copilot configuration value as a string (empty when unset).
    */
   getConfig(key: string): string {
     this.ensureConfigFile();

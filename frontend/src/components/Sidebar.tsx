@@ -9,9 +9,13 @@ import {
   GitBranch,
   GitCommit,
   Plus,
-  RefreshCcw
+  RefreshCcw,
+  Sparkles,
+  Terminal
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useRepoContext } from "../context/RepoContext";
+import ConfirmModal from "./ConfirmModal";
 
 const SectionHeader: React.FC<{ title: string }> = ({ title }) => (
   <div className="px-4 pt-6 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -21,6 +25,7 @@ const SectionHeader: React.FC<{ title: string }> = ({ title }) => (
 
 const Sidebar: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const {
     repo,
     branches,
@@ -28,6 +33,8 @@ const Sidebar: React.FC = () => {
     checkout,
     createBranch,
     deleteBranch,
+    generateBranchNameSuggestions,
+    generateCommitMessage,
     pull,
     push,
     fetch,
@@ -44,8 +51,20 @@ const Sidebar: React.FC = () => {
 
   const [showBranchInput, setShowBranchInput] = useState(false);
   const [newBranchName, setNewBranchName] = useState('');
+  const [branchSuggestions, setBranchSuggestions] = useState<string[]>([]);
+  const [branchSuggestionLoading, setBranchSuggestionLoading] = useState(false);
+  const [branchSuggestionError, setBranchSuggestionError] = useState<string | null>(null);
   const [showCommitModal, setShowCommitModal] = useState(false);
-  const [commitMessage, setCommitMessage] = useState('');
+  const [commitTitle, setCommitTitle] = useState('');
+  const [commitDescription, setCommitDescription] = useState('');
+  const [commitSuggestionLoading, setCommitSuggestionLoading] = useState(false);
+  const [commitSuggestionError, setCommitSuggestionError] = useState<string | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   const localBranches = useMemo(() => branches.filter((branch) => branch.type === "local"), [branches]);
   const remoteBranches = useMemo(() => branches.filter((branch) => branch.type === "remote"), [branches]);
@@ -70,6 +89,8 @@ const Sidebar: React.FC = () => {
 
   const handleCreateBranch = () => {
     setShowBranchInput(true);
+    setBranchSuggestions([]);
+    setBranchSuggestionError(null);
   };
 
   const handleConfirmCreateBranch = async () => {
@@ -77,29 +98,72 @@ const Sidebar: React.FC = () => {
       await createBranch(newBranchName.trim());
       setNewBranchName('');
       setShowBranchInput(false);
+      setBranchSuggestions([]);
+      setBranchSuggestionError(null);
     }
   };
 
   const handleCancelCreateBranch = () => {
     setNewBranchName('');
     setShowBranchInput(false);
+    setBranchSuggestions([]);
+    setBranchSuggestionError(null);
+  };
+
+  const handleGenerateBranchSuggestions = async () => {
+    setBranchSuggestionLoading(true);
+    setBranchSuggestionError(null);
+    try {
+      const suggestions = await generateBranchNameSuggestions();
+      setBranchSuggestions(suggestions);
+      if (!newBranchName.trim() && suggestions[0]) {
+        setNewBranchName(suggestions[0]);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setBranchSuggestionError(message);
+    } finally {
+      setBranchSuggestionLoading(false);
+    }
   };
 
   const handleCommit = () => {
     setShowCommitModal(true);
+    setCommitSuggestionError(null);
   };
 
   const handleConfirmCommit = async () => {
-    if (commitMessage.trim()) {
-      await commit(commitMessage.trim());
-      setCommitMessage('');
+    if (commitTitle.trim()) {
+      const fullMessage = commitDescription.trim()
+        ? `${commitTitle.trim()}\n\n${commitDescription.trim()}`
+        : commitTitle.trim();
+      await commit(fullMessage);
+      setCommitTitle('');
+      setCommitDescription('');
       setShowCommitModal(false);
     }
   };
 
   const handleCancelCommit = () => {
-    setCommitMessage('');
+    setCommitTitle('');
+    setCommitDescription('');
     setShowCommitModal(false);
+    setCommitSuggestionError(null);
+  };
+
+  const handleGenerateCommitSuggestion = async () => {
+    setCommitSuggestionLoading(true);
+    setCommitSuggestionError(null);
+    try {
+      const { title, description } = await generateCommitMessage();
+      setCommitTitle(title);
+      setCommitDescription(description);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setCommitSuggestionError(message);
+    } finally {
+      setCommitSuggestionLoading(false);
+    }
   };
 
   const handleStash = async () => {
@@ -114,9 +178,29 @@ const Sidebar: React.FC = () => {
     await refreshAll();
   };
 
-  const handleDeleteBranch = async (branchName: string) => {
-    if (!confirm(`Supprimer la branche ${branchName} ?`)) return;
-    await deleteBranch(branchName);
+  const handleDeleteBranch = (branchName: string, force = false) => {
+    const titleKey = force ? "confirmations.forceDeleteBranch.title" : "confirmations.deleteBranch.title";
+    const messageKey = force ? "confirmations.forceDeleteBranch.message" : "confirmations.deleteBranch.message";
+    
+    setConfirmModal({
+      isOpen: true,
+      title: t(titleKey),
+      message: t(messageKey, { branch: branchName }),
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          await deleteBranch(branchName, force);
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          // Check if the error is about branch not being fully merged
+          if (errorMessage.includes("not fully merged") && !force) {
+            // Offer to force delete
+            handleDeleteBranch(branchName, true);
+          }
+          // Other errors are handled by the context
+        }
+      }
+    });
   };
 
   return (
@@ -127,13 +211,21 @@ const Sidebar: React.FC = () => {
           onClick={handleGoToConfig}
           className="block w-full rounded bg-cyan-700/20 text-cyan-300 text-center py-2 mb-2 hover:bg-cyan-700/30 transition"
         >
-          ⚙️ Config Git
+          {t("sidebar.openConfig")}
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate("/ai-terminal")}
+          className="flex w-full items-center justify-center gap-2 rounded bg-violet-700/20 text-violet-200 text-center py-2 hover:bg-violet-700/30 transition"
+        >
+          <Terminal className="h-4 w-4" />
+          {t("sidebar.aiTerminal")}
         </button>
       </div>
       <div className="border-b border-slate-800 px-4 py-5">
-        <div className="text-xs uppercase tracking-wide text-slate-500">Dépôt</div>
-        <div className="mt-1 text-sm font-semibold text-slate-100">{repo?.name ?? "Aucun dépôt"}</div>
-        <div className="truncate text-xs text-slate-500">{repo?.path ?? "Sélectionnez un dépôt pour commencer."}</div>
+        <div className="text-xs uppercase tracking-wide text-slate-500">{t("sidebar.repositorySection")}</div>
+        <div className="mt-1 text-sm font-semibold text-slate-100">{repo?.name ?? t("sidebar.noRepository")}</div>
+        <div className="truncate text-xs text-slate-500">{repo?.path ?? t("sidebar.selectPrompt")}</div>
       </div>
 
       <div className="grid grid-cols-3 gap-2 px-4 py-4 text-xs">
@@ -144,7 +236,7 @@ const Sidebar: React.FC = () => {
           className="flex flex-col items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/60 p-2 text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <ArrowDownToLine className="h-4 w-4" />
-          Pull
+          {t("sidebar.actions.pull")}
         </button>
         <button
           type="button"
@@ -153,7 +245,7 @@ const Sidebar: React.FC = () => {
           className="flex flex-col items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/60 p-2 text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <ArrowUpFromLine className="h-4 w-4" />
-          Push
+          {t("sidebar.actions.push")}
         </button>
         <button
           type="button"
@@ -162,7 +254,7 @@ const Sidebar: React.FC = () => {
           className="flex flex-col items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/60 p-2 text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <RefreshCcw className="h-4 w-4" />
-          Fetch
+          {t("sidebar.actions.fetch")}
         </button>
         <button
           type="button"
@@ -171,7 +263,7 @@ const Sidebar: React.FC = () => {
           className="flex flex-col items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/60 p-2 text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Plus className="h-4 w-4" />
-          Branche
+          {t("sidebar.actions.branch")}
         </button>
         <button
           type="button"
@@ -180,7 +272,7 @@ const Sidebar: React.FC = () => {
           className="flex flex-col items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/60 p-2 text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <GitCommit className="h-4 w-4" />
-          Commit
+          {t("sidebar.actions.commit")}
         </button>
         <button
           type="button"
@@ -189,7 +281,7 @@ const Sidebar: React.FC = () => {
           className="flex flex-col items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/60 p-2 text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Archive className="h-4 w-4" />
-          Stash
+          {t("sidebar.actions.stash")}
         </button>
         <button
           type="button"
@@ -202,7 +294,9 @@ const Sidebar: React.FC = () => {
           } disabled:cursor-not-allowed disabled:opacity-50`}
         >
           <AlertTriangle className="h-4 w-4" />
-          {conflictCount > 0 ? `Conflits (${conflictCount})` : 'Conflits'}
+          {conflictCount > 0
+            ? t("sidebar.actions.conflictsWithCount", { count: conflictCount })
+            : t("sidebar.actions.conflicts")}
         </button>
       </div>
 
@@ -212,27 +306,61 @@ const Sidebar: React.FC = () => {
             type="text"
             value={newBranchName}
             onChange={(e) => setNewBranchName(e.target.value)}
-            placeholder="Nom de la nouvelle branche"
+            placeholder={t("sidebar.newBranchPlaceholder")}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleConfirmCreateBranch();
               if (e.key === 'Escape') handleCancelCreateBranch();
             }}
           />
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={handleGenerateBranchSuggestions}
+              disabled={branchSuggestionLoading}
+              className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 hover:border-cyan-400/50 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {branchSuggestionLoading
+                ? t("sidebar.branchSuggestionsGenerating")
+                : t("sidebar.branchSuggestionsGenerate")}
+            </button>
+            {branchSuggestionError && (
+              <p className="mt-2 text-xs text-rose-300">{branchSuggestionError}</p>
+            )}
+            {branchSuggestions.length > 0 && (
+              <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/60 p-2">
+                <div className="mb-2 text-xs uppercase tracking-wide text-slate-500">
+                  {t("sidebar.branchSuggestionsTitle")}
+                </div>
+                <div className="flex flex-col gap-1">
+                  {branchSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => setNewBranchName(suggestion)}
+                      className="w-full rounded-md border border-slate-700/60 bg-slate-900/40 px-2 py-1 text-left text-xs text-slate-200 hover:border-cyan-400/50 hover:text-cyan-200"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <div className="mt-2 flex gap-2">
             <button
               type="button"
               onClick={handleConfirmCreateBranch}
               className="flex-1 rounded-lg bg-cyan-600 px-3 py-2 text-sm text-white hover:bg-cyan-700"
             >
-              Créer
+              {t("sidebar.createBranch")}
             </button>
             <button
               type="button"
               onClick={handleCancelCreateBranch}
               className="flex-1 rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-600"
             >
-              Annuler
+              {t("sidebar.cancel")}
             </button>
           </div>
         </div>
@@ -240,38 +368,65 @@ const Sidebar: React.FC = () => {
 
       {showCommitModal && (
         <div className="px-4 pb-4">
-          <textarea
-            value={commitMessage}
-            onChange={(e) => setCommitMessage(e.target.value)}
-            placeholder="Message de commit"
-            rows={3}
+          <input
+            type="text"
+            value={commitTitle}
+            onChange={(e) => setCommitTitle(e.target.value)}
+            placeholder={t("sidebar.commitTitlePlaceholder")}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && e.ctrlKey) handleConfirmCommit();
               if (e.key === 'Escape') handleCancelCommit();
             }}
           />
+          <textarea
+            value={commitDescription}
+            onChange={(e) => setCommitDescription(e.target.value)}
+            placeholder={t("sidebar.commitDescriptionPlaceholder")}
+            rows={2}
+            className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && e.ctrlKey) handleConfirmCommit();
+              if (e.key === 'Escape') handleCancelCommit();
+            }}
+          />
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={handleGenerateCommitSuggestion}
+              disabled={commitSuggestionLoading}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 hover:border-cyan-400/50 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Sparkles className="h-4 w-4" />
+              {commitSuggestionLoading
+                ? t("sidebar.branchSuggestionsGenerating")
+                : t("sidebar.commitSuggestionsGenerate")}
+            </button>
+            {commitSuggestionError && (
+              <p className="mt-2 text-xs text-rose-300">{commitSuggestionError}</p>
+            )}
+          </div>
           <div className="mt-2 flex gap-2">
             <button
               type="button"
               onClick={handleConfirmCommit}
               className="flex-1 rounded-lg bg-cyan-600 px-3 py-2 text-sm text-white hover:bg-cyan-700"
-              disabled={!commitMessage.trim()}
+              disabled={!commitTitle.trim()}
             >
-              Commiter
+              {t("sidebar.commitButton")}
             </button>
             <button
               type="button"
               onClick={handleCancelCommit}
               className="flex-1 rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-600"
             >
-              Annuler
+              {t("sidebar.cancel")}
             </button>
           </div>
         </div>
       )}
 
-      <SectionHeader title="Branches locales" />
+      <SectionHeader title={t("sidebar.localBranches")} />
   <div className="scrollbar-thin mt-2 flex-1 overflow-auto px-2 pb-6">
         {localBranches.map((branch) => (
           <BranchRow
@@ -285,11 +440,11 @@ const Sidebar: React.FC = () => {
           />
         ))}
         {localBranches.length === 0 && (
-          <p className="px-2 text-xs text-slate-500">Aucune branche locale pour le moment.</p>
+          <p className="px-2 text-xs text-slate-500">{t("sidebar.emptyLocal")}</p>
         )}
       </div>
 
-      <SectionHeader title="Branches distantes" />
+      <SectionHeader title={t("sidebar.remoteBranches")} />
   <div className="scrollbar-thin mt-2 max-h-40 overflow-auto px-2 pb-6">
         {remoteBranches.map((branch) => (
           <BranchRow
@@ -304,9 +459,16 @@ const Sidebar: React.FC = () => {
           />
         ))}
         {remoteBranches.length === 0 && (
-          <p className="px-2 text-xs text-slate-500">Aucune branche distante détectée.</p>
+          <p className="px-2 text-xs text-slate-500">{t("sidebar.emptyRemote")}</p>
         )}
       </div>
+      <ConfirmModal
+        isOpen={confirmModal?.isOpen ?? false}
+        title={confirmModal?.title ?? ""}
+        message={confirmModal?.message ?? ""}
+        onConfirm={confirmModal?.onConfirm ?? (() => {})}
+        onCancel={() => setConfirmModal(null)}
+      />
     </aside>
   );
 };
@@ -336,35 +498,58 @@ const BranchRow: React.FC<{
   remote?: boolean;
   onCheckout: () => void;
   onDelete: () => void;
-}> = ({ name, color, current, latestCommit, remote = false, onCheckout, onDelete }) => (
-  <div className={`group mb-1 flex items-center justify-between rounded-lg px-2 py-2 text-sm hover:bg-slate-800/60 ${current ? 'bg-cyan-900/30 border border-cyan-600/50' : ''}`}>
-    <button
-      type="button"
-      onClick={onCheckout}
-      className="flex flex-1 items-center gap-3 text-left"
-    >
-      <span className="inline-flex h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-      <div>
-        <div className="flex items-center gap-2 text-slate-100">
-          <GitBranch className="h-3.5 w-3.5 text-slate-500" />
-          <span className={`truncate text-sm ${current ? 'font-semibold text-cyan-200' : ''}`}>
+}> = ({ name, color, current, latestCommit, remote = false, onCheckout, onDelete }) => {
+  const { t } = useTranslation();
+  return (
+    <div className={`group mb-1 flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-slate-800/60 ${current ? 'bg-cyan-900/30 border border-cyan-600/50' : ''}`}>
+      {/* Color indicator - fixed width */}
+      <span className="inline-flex h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ backgroundColor: color }} />
+      
+      {/* Main content - takes remaining space with overflow hidden */}
+      <button
+        type="button"
+        onClick={onCheckout}
+        className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <GitBranch className="h-3.5 w-3.5 flex-shrink-0 text-slate-500" />
+          <span 
+            className={`truncate text-sm ${current ? 'font-semibold text-cyan-200' : 'text-slate-100'}`}
+            title={name}
+          >
             {name}
-            {remote && <span className="ml-2 rounded bg-slate-700/80 px-1 text-xs text-slate-300">remote</span>}
           </span>
-          {current && <span className="rounded bg-cyan-500/20 px-1 text-[10px] uppercase text-cyan-300">HEAD</span>}
+          {remote && (
+            <span className="flex-shrink-0 rounded bg-slate-700/80 px-1 text-xs text-slate-300">
+              {t("sidebar.branchBadgeRemote")}
+            </span>
+          )}
+          {current && (
+            <span className="flex-shrink-0 rounded bg-cyan-500/20 px-1 text-[10px] uppercase text-cyan-300">
+              HEAD
+            </span>
+          )}
         </div>
-        {latestCommit && <p className="truncate text-xs text-slate-500">{latestCommit}</p>}
+        {latestCommit && (
+          <p className="truncate text-xs text-slate-500 pl-5" title={latestCommit}>
+            {latestCommit}
+          </p>
+        )}
+      </button>
+      
+      {/* Delete button - fixed width, always aligned */}
+      <div className="flex flex-shrink-0 items-center">
+        {!current ? (
+          <IconButton label={t("sidebar.deleteTooltip")} onClick={onDelete}>
+            <span className="text-xs">✕</span>
+          </IconButton>
+        ) : (
+          <div className="h-7 w-7" /> /* Spacer to keep alignment */
+        )}
       </div>
-    </button>
-    <div className="flex gap-1">
-      {!current && (
-        <IconButton label="Supprimer" onClick={onDelete}>
-          <span className="text-xs">✕</span>
-        </IconButton>
-      )}
     </div>
-  </div>
-);
+  );
+};
 
 const IconButton: React.FC<{ children: React.ReactNode; onClick: () => void; label: string }> = ({ children, onClick, label }) => (
   <button

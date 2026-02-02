@@ -141,17 +141,35 @@ const api = {
   cloneRepository(repoUrl: string, localPath: string): Response<RepoSnapshot> {
     return ipcRenderer.invoke("repo:clone", { repoUrl, localPath });
   },
-  getOllamaConfig(key: string): Response<string> {
-    return ipcRenderer.invoke("ollama:get-config", { key });
+  getCopilotConfig(key: string): Response<string> {
+    return ipcRenderer.invoke("copilot:get-config", { key });
   },
-  setOllamaConfig(key: string, value: string): Response<unknown> {
-    return ipcRenderer.invoke("ollama:set-config", { key, value });
+  setCopilotConfig(key: string, value: string): Response<unknown> {
+    return ipcRenderer.invoke("copilot:set-config", { key, value });
   },
-  clearOllamaConfig(): Response<unknown> {
-    return ipcRenderer.invoke("ollama:clear-config");
+  clearCopilotConfig(): Response<unknown> {
+    return ipcRenderer.invoke("copilot:clear-config");
   },
   generateCommitMessage(): Response<{ title: string; description: string }> {
-    return ipcRenderer.invoke("ollama:generate-commit-message");
+    return ipcRenderer.invoke("copilot:generate-commit-message");
+  },
+  generateBranchNameSuggestions(): Response<string[]> {
+    return ipcRenderer.invoke("copilot:generate-branch-name-suggestions");
+  },
+  suggestGitCommand(prompt: string): Response<{ command: string; explanation: string; isGlobal: boolean; requiresRepo: boolean; warnings: string[] }> {
+    return ipcRenderer.invoke("copilot:suggest-git-command", { prompt });
+  },
+  executeGitCommand(command: string): Response<{ command: string; stdout: string; stderr: string; exitCode: number | null; durationMs: number; isGlobal: boolean }> {
+    return ipcRenderer.invoke("git:execute-command", { command });
+  },
+  clearAiTerminalSession(): Response<unknown> {
+    return ipcRenderer.invoke("ai-terminal:clear-session");
+  },
+  startCopilotServer(port: number): Response<{ started: boolean; pid?: number; message?: string }> {
+    return ipcRenderer.invoke("copilot:start-server", { port });
+  },
+  stopCopilotServer(): Response<{ stopped: boolean; pid?: number; message?: string }> {
+    return ipcRenderer.invoke("copilot:stop-server");
   },
   getAppConfig(key: string): Response<string> {
     return ipcRenderer.invoke("app:get-config", { key });
@@ -161,6 +179,15 @@ const api = {
   },
   clearAppConfig(): Response<unknown> {
     return ipcRenderer.invoke("app:clear-config");
+  },
+  onPeriodicFetch(handler: (payload: { success: boolean; error?: string }) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { success: boolean; error?: string }) => {
+      handler(payload);
+    };
+    ipcRenderer.on("repo:periodic-fetch", listener);
+    return () => {
+      ipcRenderer.removeListener("repo:periodic-fetch", listener);
+    };
   },
   minimizeWindow(): Promise<void> {
     return ipcRenderer.invoke("window:minimize");

@@ -70,6 +70,18 @@ Les artefacts seront générés dans `release/` (NSIS pour Windows, DMG pour mac
 - **better-sqlite3** pour le stockage local
 - **Lucide React Icons** pour l'iconographie
 
+## 🌐 Internationalisation
+
+L'interface prend désormais en charge plusieurs langues via **i18next + react-i18next**. Un sélecteur est disponible dans la barre de titre pour passer instantanément du français à l'anglais (la préférence est mémorisée dans `localStorage`).
+
+### Ajouter ou modifier une traduction
+
+1. Éditer `frontend/src/i18n/resources.ts` et ajouter/mettre à jour la clé dans les deux sections `en.translation` et `fr.translation`.
+2. Réutiliser la clé dans le composant via `const { t } = useTranslation();` puis `t("namespace.key")`.
+3. Pour les nouvelles vues, importer `useTranslation` et éviter d'introduire du texte en dur.
+
+> Conseil : gardez les clés regroupées par composant/page pour faciliter la maintenance (`home`, `sidebar`, `config`, etc.).
+
 ## 🧭 Multi-sélection & réécriture
 
 Le graphe de commits permet désormais de sélectionner plusieurs nœuds pour réécrire rapidement l'historique local :

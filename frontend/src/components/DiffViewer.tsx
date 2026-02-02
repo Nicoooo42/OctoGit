@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
-import { useRepoContext, type DiffScope } from "../context/RepoContext";
+import { useTranslation } from "react-i18next";
 import { Plus, Minus } from "lucide-react";
+import { useRepoContext, type DiffScope } from "../context/RepoContext";
 
 type DiffLineType = "add" | "remove" | "context" | "meta";
 
@@ -116,12 +117,6 @@ const signClasses: Record<DiffLineType, string> = {
   meta: "text-slate-500"
 };
 
-const scopeLabels: Record<DiffScope, string> = {
-  commit: "Commit",
-  working: "Unstaged",
-  staged: "Staged"
-};
-
 const scopeBadgeClasses: Record<DiffScope, string> = {
   commit: "hidden",
   working: "border-amber-500/40 bg-amber-500/10 text-amber-200",
@@ -160,6 +155,15 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   onHunkAction
 }) => {
   const { stageHunk, discardHunk, unstageHunk } = useRepoContext();
+  const { t } = useTranslation();
+  const scopeLabels = useMemo(
+    () => ({
+      commit: t("diffViewer.scope.commit"),
+      working: t("diffViewer.scope.working"),
+      staged: t("diffViewer.scope.staged")
+    }),
+    [t]
+  );
 
   const getHunkPatch = (prologue: DiffLine[], hunk: DiffHunk): string => {
     const prologueLines = prologue.map((line) => line.raw).filter((line) => line !== "");
@@ -175,7 +179,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
       {prologue.length > 0 && (
         <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/70">
           <div className="border-b border-slate-800 bg-slate-900/80 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Métadonnées
+            {t("diffViewer.metadata")}
           </div>
           <div className="divide-y divide-slate-800">
             {prologue.map((line, index) => (
@@ -187,7 +191,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
 
       {hunks.length === 0 ? (
         <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-6 text-xs text-slate-500">
-          Aucune différence à afficher pour ce fichier.
+          {t("diffViewer.noDiff")}
         </div>
       ) : (
         hunks.map((hunk, hunkIndex) => (
@@ -215,7 +219,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                         className="flex items-center gap-1 rounded border border-emerald-600/40 bg-emerald-600/10 px-2 py-1 text-[10px] text-emerald-200 transition hover:bg-emerald-600/20"
                       >
                         <Plus className="h-3 w-3" />
-                        Stage
+                        {t("common.stage")}
                       </button>
                       <button
                         type="button"
@@ -226,7 +230,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                         className="flex items-center gap-1 rounded border border-rose-600/40 bg-rose-600/10 px-2 py-1 text-[10px] text-rose-200 transition hover:bg-rose-600/20"
                       >
                         <Minus className="h-3 w-3" />
-                        Discard
+                        {t("common.discard")}
                       </button>
                     </>
                   )}
@@ -240,7 +244,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                       className="flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-200 transition hover:bg-amber-500/20"
                     >
                       <Minus className="h-3 w-3" />
-                      Unstage
+                      {t("common.unstage")}
                     </button>
                   )}
                 </div>

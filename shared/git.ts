@@ -65,6 +65,23 @@ export interface MergeConflictFile {
   isBinary: boolean;
 }
 
+export interface AiTerminalSuggestion {
+  command: string;
+  explanation: string;
+  isGlobal: boolean;
+  requiresRepo: boolean;
+  warnings: string[];
+}
+
+export interface AiTerminalExecuteResult {
+  command: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  durationMs: number;
+  isGlobal: boolean;
+}
+
 export type BackendSuccess<T> = {
   success: true;
   data: T;

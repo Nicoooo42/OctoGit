@@ -1,4 +1,6 @@
 export type {
+  AiTerminalExecuteResult,
+  AiTerminalSuggestion,
   BranchInfo,
   BranchType,
   CommitDetails,
