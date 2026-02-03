@@ -473,7 +473,25 @@ export class GitService {
             .map((ref: string) => ref.replace(/^HEAD ->\s*/, ""))
         : [];
 
-      let lane = commitLaneMap.get(hash) ?? this.pickLane(refs, branchLaneMap, commitLaneMap, nextLane);
+      // Priority 1: Use lane from known branch refs
+      let lane: number | undefined;
+      for (const ref of refs) {
+        if (branchLaneMap.has(ref)) {
+          lane = branchLaneMap.get(ref);
+          break;
+        }
+      }
+
+      // Priority 2: Use propagated lane from children
+      if (lane === undefined) {
+        lane = commitLaneMap.get(hash);
+      }
+
+      // Priority 3: Assign new lane or use next lane
+      if (lane === undefined) {
+        lane = this.pickLane(refs, branchLaneMap, commitLaneMap, nextLane);
+      }
+
       if (lane === nextLane) {
         nextLane += 1;
       }
@@ -484,8 +502,11 @@ export class GitService {
       // Propagate lane to parents if they don't have one yet
       parents.forEach((parentHash: string, parentIndex: number) => {
         if (parentIndex === 0) {
-          commitLaneMap.set(parentHash, lane);
-          this.debug(`Propagated lane ${lane} to first parent ${parentHash.substring(0, 7)}`);
+          // Only set if not already set, to prevent overwriting by secondary branches
+          if (!commitLaneMap.has(parentHash)) {
+            commitLaneMap.set(parentHash, lane!);
+            this.debug(`Propagated lane ${lane} to first parent ${parentHash.substring(0, 7)}`);
+          }
         }
       });
 
@@ -497,8 +518,11 @@ export class GitService {
       // Propagate color to the first parent to keep the main lane consistent
       parents.forEach((parentHash: string, parentIndex: number) => {
         if (parentIndex === 0) {
-          commitColorMap.set(parentHash, color);
-          this.debug(`Propagated color ${color} to first parent ${parentHash.substring(0, 7)}`);
+           // Only set if not already set
+           if (!commitColorMap.has(parentHash)) {
+              commitColorMap.set(parentHash, color);
+              this.debug(`Propagated color ${color} to first parent ${parentHash.substring(0, 7)}`);
+           }
         }
       });
 
