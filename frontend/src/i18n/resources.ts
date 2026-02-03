@@ -51,7 +51,7 @@ export const resources: Resource = {
         close: "Close"
       },
       home: {
-        heroSubtitle: "Your modern Git cockpit inspired by GitKraken.",
+        heroSubtitle: "Your modern Git cockpit.",
         openRepo: "Open a repository",
         cloneRepo: "Clone a repository",
         recentsTitle: "Recent repositories",
@@ -354,7 +354,7 @@ export const resources: Resource = {
         close: "Fermer"
       },
       home: {
-        heroSubtitle: "Votre cockpit Git moderne, inspiré par GitKraken.",
+        heroSubtitle: "Votre cockpit Git moderne.",
         openRepo: "Ouvrir un dépôt",
         cloneRepo: "Cloner un dépôt",
         recentsTitle: "Dépôts récents",

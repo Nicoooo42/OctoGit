@@ -1,11 +1,11 @@
 # BciGit
 
-BciGit est un client Git multi-plateforme conçu avec Electron, React, TypeScript et TailwindCSS. L'application reproduit l'expérience visuelle de GitKraken tout en offrant un moteur Git alimenté par `simple-git` et une base SQLite pour les dépôts récents.
+BciGit est un client Git multi-plateforme conçu avec Electron, React, TypeScript et TailwindCSS. L'application offrant un moteur Git alimenté par `simple-git` et une base SQLite pour les dépôts récents.
 
 ## ✨ Fonctionnalités principales
 
 - **Accueil** avec la liste des dépôts récents (SQLite + better-sqlite3) et un bouton pour ouvrir un dépôt via les dialogues Electron.
-- **Vue dépôt** en trois colonnes (layout identique à GitKraken) :
+- **Vue dépôt** en trois colonnes :
   - Barre latérale gauche avec branches locales/distantes, raccourcis Pull/Push/Fetch et gestion de branches.
   - Graphe central des commits généré avec D3 (couleurs par branche, transitions fluides, sélection de commit).
   - Détails du commit sélectionné (auteur, date, fichiers modifiés, diff interactif).
@@ -116,4 +116,4 @@ Le canal IPC est encapsulé dans `electron/preload.ts`. L'API exposée applique 
 
 ---
 
-BciGit apporte une expérience GitKraken-like riche et extensible, tout en restant 100 % open source et cross-platform.
+BciGit apporte une expérience riche et extensible, tout en restant 100 % open source et cross-platform.
