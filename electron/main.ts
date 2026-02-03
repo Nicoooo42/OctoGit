@@ -111,6 +111,7 @@ function registerIpcHandlers() {
   ipcMain.handle("repo:open", async (_event: IpcMainInvokeEvent, repoPath: string) => buildResponse(openAndSnapshot(repoPath)));
 
   ipcMain.handle("repo:branches", async () => buildResponse(backend!.getBranches()));
+  ipcMain.handle("repo:tags", async () => buildResponse(backend!.getTags()));
   ipcMain.handle("repo:commits", async () => buildResponse(backend!.getCommitGraph()));
   ipcMain.handle(
     "repo:commit-details",

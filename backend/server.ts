@@ -80,6 +80,13 @@ export class BackendServer {
   }
 
   /**
+   * Retrieves tag information for the current repository.
+   */
+  async getTags() {
+    return this.gitService.getTags();
+  }
+
+  /**
    * Retrieves the commit graph for the current repository.
    */
   async getCommitGraph() {

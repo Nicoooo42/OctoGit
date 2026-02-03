@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import type {
   BranchInfo,
+  TagInfo,
   CommitDetails,
   CommitGraphData,
   RecentRepository,
@@ -37,6 +38,7 @@ function getBciGitApi() {
 type RepoContextValue = {
   repo: RepoSummary | null;
   branches: BranchInfo[];
+  tags: TagInfo[];
   graph: CommitGraphData | null;
   recents: RecentRepository[];
   loading: boolean;
@@ -92,6 +94,7 @@ const RepoContext = createContext<RepoContextValue | undefined>(undefined);
 export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [repo, setRepo] = useState<RepoSummary | null>(null);
   const [branches, setBranches] = useState<BranchInfo[]>([]);
+  const [tags, setTags] = useState<TagInfo[]>([]);
   const [graph, setGraph] = useState<CommitGraphData | null>(null);
   const [recents, setRecents] = useState<RecentRepository[]>([]);
   const [loading, setLoading] = useState(false);
@@ -238,13 +241,15 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
     try {
-      const [branchesData, graphData, workingDirData, conflictsData] = await Promise.all([
+      const [branchesData, tagsData, graphData, workingDirData, conflictsData] = await Promise.all([
         unwrap(getBciGitApi().getBranches()),
+        unwrap(getBciGitApi().getTags()),
         unwrap(getBciGitApi().getCommitGraph()),
         unwrap(getBciGitApi().getWorkingDirStatus()),
         unwrap<MergeConflictFile[]>(getBciGitApi().getMergeConflicts())
       ]);
       setBranches(branchesData);
+      setTags(tagsData);
       setGraph(graphData);
       setWorkingDirStatus(workingDirData);
       setConflicts(conflictsData);
@@ -586,6 +591,7 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     () => ({
       repo,
       branches,
+      tags,
       graph,
       recents,
       loading,
@@ -633,6 +639,7 @@ export const RepoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }),
     [
       branches,
+      tags,
       checkout,
       cherryPick,
       clearError,

@@ -1,5 +1,12 @@
 export type BranchType = "local" | "remote";
 
+export interface TagInfo {
+  name: string;
+  hash: string;
+  date?: string;
+  message?: string;
+}
+
 export interface BranchInfo {
   name: string;
   fullName: string;

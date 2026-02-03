@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   BackendResponse,
   BranchInfo,
+  TagInfo,
   CommitDetails,
   CommitGraphData,
   MergeConflictFile,
@@ -29,6 +30,9 @@ const api = {
   },
   getBranches(): Response<BranchInfo[]> {
     return ipcRenderer.invoke("repo:branches");
+  },
+  getTags(): Response<TagInfo[]> {
+    return ipcRenderer.invoke("repo:tags");
   },
   getCommitGraph(): Response<CommitGraphData> {
     return ipcRenderer.invoke("repo:commits");

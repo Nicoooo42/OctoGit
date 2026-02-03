@@ -736,27 +736,6 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
       .attr("opacity", 0)
       .style("transition", "transform 0.2s ease, filter 0.2s ease")
       .style("cursor", "pointer")
-      .on("mouseenter", function (_event: MouseEvent, node: CommitNode) {
-        d3.select(this)
-          .raise()
-          .transition()
-          .duration(200)
-          .ease(d3.easeCubic)
-          .attr("transform", nodeTransform(node, 1.3));
-        d3.select(this)
-          .select(".node-outer")
-          .style("filter", `drop-shadow(0 0 12px ${getGlow(node.color, 0.7)}) drop-shadow(0 0 4px ${getGlow(node.color, 0.4)})`);
-      })
-      .on("mouseleave", function (_event: MouseEvent, node: CommitNode) {
-        d3.select(this)
-          .transition()
-          .duration(200)
-          .ease(d3.easeCubic)
-          .attr("transform", nodeTransform(node, 1));
-        d3.select(this)
-          .select(".node-outer")
-          .style("filter", `drop-shadow(0 0 8px ${getGlow(node.color, 0.6)}) drop-shadow(0 0 2px rgba(0,0,0,0.6))`);
-      })
       .on("click", (event: MouseEvent, node: CommitNode) => {
         event.stopPropagation();
         closeContextMenu();

@@ -6,6 +6,7 @@ import { simpleGit, type SimpleGit } from "simple-git";
 import {
   type AiTerminalExecuteResult,
   type BranchInfo,
+  type TagInfo,
   type CommitDetails,
   type CommitGraphData,
   type CommitLink,
@@ -82,6 +83,39 @@ export class GitService {
       throw new Error("Aucun dépôt ouvert");
     }
     return this.repoPath;
+  }
+
+
+  /**
+   * Lists all tags in the repository.
+   */
+  async getTags(): Promise<TagInfo[]> {
+    const git = this.ensureRepo();
+
+    const tagsRaw = await git.raw([
+      "for-each-ref",
+      "--sort=-creatordate",
+      "--format=%(refname:short)|%(objectname)|%(creatordate:iso8601)|%(contents:subject)",
+      "refs/tags"
+    ]);
+
+    const tags: TagInfo[] = [];
+
+    tagsRaw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .forEach((line) => {
+        const [name, hash, date, message] = line.split("|");
+        tags.push({
+          name,
+          hash,
+          date,
+          message
+        });
+      });
+
+    return tags;
   }
 
   /**

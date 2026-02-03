@@ -11,6 +11,7 @@ import {
   Plus,
   RefreshCcw,
   Sparkles,
+  Tag,
   Terminal
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -29,6 +30,7 @@ const Sidebar: React.FC = () => {
   const {
     repo,
     branches,
+    tags,
     loading,
     checkout,
     createBranch,
@@ -444,6 +446,21 @@ const Sidebar: React.FC = () => {
         )}
       </div>
 
+      <SectionHeader title={t("sidebar.tags")} />
+      <div className="scrollbar-thin mt-2 max-h-40 overflow-auto px-2 pb-6">
+        {tags.map((tag) => (
+          <TagRow
+            key={tag.name}
+            name={tag.name}
+            message={tag.message}
+            onCheckout={() => checkout(tag.name)}
+          />
+        ))}
+        {tags.length === 0 && (
+          <p className="px-2 text-xs text-slate-500">{t("sidebar.emptyTags")}</p>
+        )}
+      </div>
+
       <SectionHeader title={t("sidebar.remoteBranches")} />
   <div className="scrollbar-thin mt-2 max-h-40 overflow-auto px-2 pb-6">
         {remoteBranches.map((branch) => (
@@ -564,5 +581,34 @@ const IconButton: React.FC<{ children: React.ReactNode; onClick: () => void; lab
     {children}
   </button>
 );
+
+const TagRow: React.FC<{
+  name: string;
+  message?: string;
+  onCheckout: () => void;
+}> = ({ name, message, onCheckout }) => {
+  return (
+    <div className="group mb-1 flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-slate-800/60">
+      <span className="inline-flex h-2.5 w-2.5 flex-shrink-0 rounded-full bg-yellow-500" />
+      <button
+        type="button"
+        onClick={onCheckout}
+        className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <Tag className="h-3.5 w-3.5 flex-shrink-0 text-slate-500" />
+          <span className="truncate text-sm text-slate-100" title={name}>
+            {name}
+          </span>
+        </div>
+        {message && (
+          <p className="truncate text-xs text-slate-500 pl-5" title={message}>
+            {message}
+          </p>
+        )}
+      </button>
+    </div>
+  );
+};
 
 export default Sidebar;
