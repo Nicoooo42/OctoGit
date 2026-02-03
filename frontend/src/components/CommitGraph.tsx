@@ -3,7 +3,7 @@ import { Archive, Copy, GitBranch, GitCommit, GitMerge, Scissors, Trash2 } from 
 import { useTranslation } from "react-i18next";
 import * as d3 from "d3";
 import { useRepoContext } from "../context/RepoContext";
-import type { CommitGraphData, CommitLink, CommitNode } from "../types/git";
+import type { CommitLink, CommitNode } from "../types/git";
 import InputModal from "./InputModal";
 import ConfirmModal from "./ConfirmModal";
 import {
@@ -21,10 +21,36 @@ type ContextMenuState = {
   commit: CommitNode;
 };
 
-const ROW_HEIGHT = 40;
-const LANE_WIDTH = 20;
-const NODE_RADIUS = 5;
-const MARGIN = { top: 20, right: 40, bottom: 20, left: 20 };
+const ROW_HEIGHT = 36;
+const LANE_WIDTH = 18;
+const NODE_RADIUS = 6;
+const BRANCH_COLUMN_WIDTH = 200;
+const MESSAGE_COLUMN_GAP = 20; // Reduced gap since we have a column now
+const MESSAGE_COLUMN_WIDTH = 260; // Min width
+const MARGIN = { top: 20, right: 20, bottom: 20, left: 20 };
+
+const BRANCH_PALETTE = [
+  { base: "#4a9eff", border: "#2d7dd2", glow: "rgba(74,158,255,0.6)" },
+  { base: "#b968d9", border: "#8e4db3", glow: "rgba(185,104,217,0.6)" },
+  { base: "#d968b9", border: "#b34d8e", glow: "rgba(217,104,185,0.6)" },
+  { base: "#68d9d9", border: "#4db3b3", glow: "rgba(104,217,217,0.6)" },
+  { base: "#ff6b6b", border: "#d24d4d", glow: "rgba(255,107,107,0.6)" },
+  { base: "#ffb347", border: "#d98a2d", glow: "rgba(255,179,71,0.6)" },
+  { base: "#ffd93d", border: "#d9b32d", glow: "rgba(255,217,61,0.6)" },
+  { base: "#6bcf7f", border: "#4db35e", glow: "rgba(107,207,127,0.6)" }
+];
+
+const toRgba = (color: string, alpha: number) => {
+  const parsed = d3.color(color);
+  if (!parsed) {
+    return color;
+  }
+  const rgb = d3.rgb(parsed);
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+};
+
+const brighten = (color: string, amount: number) => d3.rgb(color).brighter(amount).formatHex();
+const darken = (color: string, amount: number) => d3.rgb(color).darker(amount).formatHex();
 
 const CONTEXT_MENU_WIDTH = 220;
 const CONTEXT_MENU_HEIGHT = 192;
@@ -121,12 +147,27 @@ const CommitGraph: React.FC = () => {
     }
     const laneCount = Math.max(1, ...graph.nodes.map((node) => node.lane)) + 1;
     const height = graph.nodes.length * ROW_HEIGHT + MARGIN.top + MARGIN.bottom;
-    const width = laneCount * LANE_WIDTH + MARGIN.left + MARGIN.right;
+    const width = BRANCH_COLUMN_WIDTH + laneCount * LANE_WIDTH + MARGIN.left + MARGIN.right + MESSAGE_COLUMN_GAP + MESSAGE_COLUMN_WIDTH;
 
     return { laneCount, height, width };
   }, [graph]);
 
   const nodeIndexMap = useMemo(() => createNodeIndexMap(graph), [graph]);
+
+  const laneExtents = useMemo(() => {
+    if (!graph) return new Map<number, { min: number; max: number }>();
+    const extents = new Map<number, { min: number; max: number }>();
+    graph.nodes.forEach((node, index) => {
+      const current = extents.get(node.lane);
+      if (!current) {
+        extents.set(node.lane, { min: index, max: index });
+      } else {
+        current.min = Math.min(current.min, index);
+        current.max = Math.max(current.max, index);
+      }
+    });
+    return extents;
+  }, [graph]);
 
   const sortWithIndex = useCallback(
     (hashes: string[]) => sortSelection(hashes, nodeIndexMap),
@@ -499,17 +540,17 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
     
     const container = containerRef.current;
     const containerWidth = container ? container.clientWidth : layout.width;
-    const availableWidth = containerWidth - MARGIN.left - MARGIN.right;
-  const laneWidth = layout.laneCount > 0 ? availableWidth / layout.laneCount : LANE_WIDTH;
-  const laneX = (lane: number) => lane * laneWidth + laneWidth / 2;
+    const laneWidth = LANE_WIDTH;
+    const laneX = (lane: number) => BRANCH_COLUMN_WIDTH + lane * laneWidth + laneWidth / 2;
+    const messageColumnX = BRANCH_COLUMN_WIDTH + layout.laneCount * LANE_WIDTH + MESSAGE_COLUMN_GAP;
     
     svg
       .attr("width", "100%")
       .attr("height", layout.height)
-      .style("minWidth", `${containerWidth}px`)
+      .style("minWidth", `${Math.max(containerWidth, layout.width)}px`)
       .style("minHeight", `${layout.height}px`);
 
-  const g = svg.append("g").attr("transform", `translate(${MARGIN.left}, ${MARGIN.top})`);
+    const g = svg.append("g").attr("transform", `translate(${MARGIN.left}, ${MARGIN.top})`);
     const nodesSubset = graph.nodes.slice(visibleRange.start, visibleRange.end);
     const linksSubset = graph.links.filter((link) => {
       const sourceIndex = nodeIndexMap.get(link.source);
@@ -522,15 +563,104 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
       return maxIndex >= visibleRange.start && minIndex <= visibleRange.end;
     });
 
+    const defs = svg.append("defs");
+    const paletteColors = BRANCH_PALETTE.map((entry) => entry.base);
+    const uniqueColors = new Set<string>([
+      ...paletteColors,
+      ...nodesSubset.map((node) => node.color),
+      ...linksSubset.map((link) => link.color)
+    ]);
+
+    const colorIdMap = new Map<string, string>();
+    const getColorId = (color: string) => {
+      const cached = colorIdMap.get(color);
+      if (cached) return cached;
+      const normalized = color.replace(/[^a-zA-Z0-9]/g, "");
+      const id = `c${normalized}`;
+      colorIdMap.set(color, id);
+      return id;
+    };
+
+    uniqueColors.forEach((color) => {
+      const colorId = getColorId(color);
+      const light = brighten(color, 0.9);
+      const mid = brighten(color, 0.2);
+      const dark = darken(color, 0.9);
+
+      const radial = defs
+        .append("radialGradient")
+        .attr("id", `node-gradient-${colorId}`)
+        .attr("cx", "30%")
+        .attr("cy", "30%")
+        .attr("r", "70%");
+
+      radial.append("stop").attr("offset", "0%").attr("stop-color", light);
+      radial.append("stop").attr("offset", "65%").attr("stop-color", mid);
+      radial.append("stop").attr("offset", "100%").attr("stop-color", dark);
+
+      const linear = defs
+        .append("linearGradient")
+        .attr("id", `line-gradient-${colorId}`)
+        .attr("x1", "0%")
+        .attr("y1", "0%")
+        .attr("x2", "0%")
+        .attr("y2", "100%");
+
+      linear.append("stop").attr("offset", "0%").attr("stop-color", brighten(color, 0.5));
+      linear.append("stop").attr("offset", "100%").attr("stop-color", color);
+    });
+
+    const getLineGradient = (color: string) => `url(#line-gradient-${getColorId(color)})`;
+    const getNodeGradient = (color: string) => `url(#node-gradient-${getColorId(color)})`;
+    const getGlow = (color: string, alpha: number) => toRgba(color, alpha);
+
+    const laneLineGroup = g.append("g").attr("fill", "none");
+
+    laneLineGroup
+      .selectAll("line")
+      .data(d3.range(layout.laneCount))
+      .join("line")
+      .attr("x1", (lane) => laneX(lane))
+      .attr("x2", (lane) => laneX(lane))
+      .attr("y1", (lane) => {
+        const extent = laneExtents.get(lane);
+        const startIdx = extent ? extent.min : 0;
+        return Math.max(visibleRange.start, startIdx) * ROW_HEIGHT;
+      })
+      .attr("y2", (lane) => {
+        const extent = laneExtents.get(lane);
+        const endIdx = extent ? extent.max : 0;
+        // Extend slightly to cover the node center if connected
+        return Math.min(visibleRange.end, endIdx) * ROW_HEIGHT;
+      })
+      .attr("stroke", (lane) => BRANCH_PALETTE[lane % BRANCH_PALETTE.length].base)
+      .attr("stroke-width", 2)
+      .attr("opacity", (lane) => {
+        const extent = laneExtents.get(lane);
+        if (!extent) return 0;
+        const start = Math.max(visibleRange.start, extent.min);
+        const end = Math.min(visibleRange.end, extent.max);
+        // Only show if the line helps connect at least two nodes or spans a gap
+        return start < end ? 0.7 : 0;
+      })
+      .attr("stroke-linecap", "round")
+      .attr("stroke-linejoin", "round")
+      .style(
+        "filter",
+        (lane) => `drop-shadow(0 0 6px ${BRANCH_PALETTE[lane % BRANCH_PALETTE.length].glow})`
+      );
+
     const linkGroup = g.append("g").attr("fill", "none").attr("stroke-linecap", "round");
 
     linkGroup
       .selectAll<SVGPathElement, CommitLink>("path")
       .data(linksSubset, (link: CommitLink) => `${link.source}-${link.target}`)
       .join("path")
-      .attr("stroke", (link: CommitLink) => link.color)
-      .attr("stroke-width", (link: CommitLink) => (link.isFirstParent ? 1.6 : 1.2))
-      .attr("opacity", (link: CommitLink) => (link.isFirstParent ? 0.85 : 0.7))
+      .attr("stroke", (link: CommitLink) => getLineGradient(link.color))
+      .attr("stroke-width", 2)
+      .attr("opacity", 0.9)
+      .attr("stroke-linejoin", "round")
+      .style("filter", (link: CommitLink) => `drop-shadow(0 0 4px ${getGlow(link.color, 0.4)})`)
       .attr("d", (link: CommitLink) => {
         const sourceIndex = nodeIndexMap.get(link.source);
         const targetIndex = nodeIndexMap.get(link.target);
@@ -544,31 +674,56 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
         const y1 = sourceIndex * ROW_HEIGHT;
         const x2 = laneX(targetNode.lane);
         const y2 = targetIndex * ROW_HEIGHT;
-        const isFirstParent = link.isFirstParent ?? false;
 
-        if (isFirstParent) {
-          if (sourceNode.lane === targetNode.lane) {
-            return `M${x1},${y1} L${x2},${y2}`;
-          }
-          const midY = (y1 + y2) / 2;
-          return `M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}`;
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const dirX = Math.sign(dx) || 1;
+        const dirY = Math.sign(dy) || 1;
+
+        if (x1 === x2) {
+          // Same lane: straight vertical line, tangent to commit circles
+          const startY = y1 + dirY * NODE_RADIUS;
+          const endY = y2 - dirY * NODE_RADIUS;
+          return `M${x1},${startY} L${x2},${endY}`;
         }
 
-        // Courbe plus marquée pour illustrer la jonction de merge
-        let direction = Math.sign(x2 - x1);
-        if (direction === 0) {
-          const lastChar = link.target.charCodeAt(link.target.length - 1);
-          direction = (lastChar & 1) === 0 ? -1 : 1;
-        }
-        const lateralOffset = laneWidth * 0.45;
-        const controlYOffset = Math.max(ROW_HEIGHT * 0.25, (y2 - y1) * 0.35);
-        const controlX1 = x1 + direction * lateralOffset;
-        const controlY1 = y1 + controlYOffset;
-        const controlX2 = x2 - direction * lateralOffset * 0.25;
-        const controlY2 = y2 - controlYOffset * 0.4;
+        // Different lane: Metro-style orthogonal path
+        const startX = x1 + dirX * NODE_RADIUS;
+        const startY = y1;
+        const endX = x2;
+        const endY = y2 - dirY * NODE_RADIUS;
 
-        return `M${x1},${y1} C${controlX1},${controlY1} ${controlX2},${controlY2} ${x2},${y2}`;
-      });
+        // Radius for the 90-degree turn
+        const safeDistX = Math.abs(endX - startX);
+        const safeDistY = Math.abs(endY - startY);
+        // We use a fixed radius (12px) but cap it if nodes are too close
+        const r = Math.min(12, safeDistX, safeDistY);
+
+        // Turn point
+        const cornerX = endX - dirX * r; 
+        const turnStartY = startY + dirY * r;
+
+        // M start -> L corner -> Q (control) target_turn -> L target
+        return `M${startX},${startY} L${cornerX},${startY} Q${endX},${startY} ${endX},${turnStartY} L${endX},${endY}`;
+      })
+      .attr("stroke-dasharray", function () {
+        const length = (this as SVGPathElement).getTotalLength();
+        return `${length} ${length}`;
+      })
+      .attr("stroke-dashoffset", function () {
+        return (this as SVGPathElement).getTotalLength();
+      })
+      .transition()
+      .duration(500)
+      .ease(d3.easeCubic)
+      .attr("stroke-dashoffset", 0);
+
+    const nodeTransform = (node: CommitNode, scale = 1) => {
+      const actualIndex = nodeIndexMap.get(node.hash) ?? 0;
+      const x = laneX(node.lane);
+      const y = actualIndex * ROW_HEIGHT;
+      return `translate(${x}, ${y}) scale(${scale})`;
+    };
 
     const nodeGroup = g.append("g");
 
@@ -577,13 +732,31 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
       .data(nodesSubset, (node: CommitNode) => node.hash)
       .join("g")
       .attr("class", "commit-node")
-      .attr("transform", (node: CommitNode) => {
-        const actualIndex = nodeIndexMap.get(node.hash) ?? 0;
-        const x = laneX(node.lane);
-        const y = actualIndex * ROW_HEIGHT;
-        return `translate(${x}, ${y})`;
-      })
+      .attr("transform", (node: CommitNode) => nodeTransform(node, 0.8))
+      .attr("opacity", 0)
+      .style("transition", "transform 0.2s ease, filter 0.2s ease")
       .style("cursor", "pointer")
+      .on("mouseenter", function (_event: MouseEvent, node: CommitNode) {
+        d3.select(this)
+          .raise()
+          .transition()
+          .duration(200)
+          .ease(d3.easeCubic)
+          .attr("transform", nodeTransform(node, 1.3));
+        d3.select(this)
+          .select(".node-outer")
+          .style("filter", `drop-shadow(0 0 12px ${getGlow(node.color, 0.7)}) drop-shadow(0 0 4px ${getGlow(node.color, 0.4)})`);
+      })
+      .on("mouseleave", function (_event: MouseEvent, node: CommitNode) {
+        d3.select(this)
+          .transition()
+          .duration(200)
+          .ease(d3.easeCubic)
+          .attr("transform", nodeTransform(node, 1));
+        d3.select(this)
+          .select(".node-outer")
+          .style("filter", `drop-shadow(0 0 8px ${getGlow(node.color, 0.6)}) drop-shadow(0 0 2px rgba(0,0,0,0.6))`);
+      })
       .on("click", (event: MouseEvent, node: CommitNode) => {
         event.stopPropagation();
         closeContextMenu();
@@ -690,42 +863,46 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
       });
 
     nodeEnter
+      .transition()
+      .duration(300)
+      .ease(d3.easeCubic)
+      .attr("opacity", 1)
+      .attr("transform", (node: CommitNode) => nodeTransform(node, 1));
+
+    nodeEnter
       .append("circle")
+      .attr("class", "node-outer")
       .attr("r", NODE_RADIUS)
       .attr("cx", 0)
       .attr("cy", 0)
-      .attr("fill", (node: CommitNode) => node.hash === headCommitHash ? "#06b6d4" : node.color)
-      .attr("stroke", (node: CommitNode) => {
-        if (node.hash === selectedCommit) {
-          return "#ffffff";
-        }
-        if (selectedCommits.includes(node.hash)) {
-          return "#38bdf8";
-        }
-        if (node.hash === headCommitHash) {
-          return "#06b6d4";
-        }
-        return "#0f172a";
-      })
-      .attr("stroke-width", (node: CommitNode) => {
-        if (node.hash === selectedCommit || selectedCommits.includes(node.hash)) {
-          return 2;
-        }
-        if (node.hash === headCommitHash) {
-          return 2;
-        }
-        return 1.5;
-      })
-      .attr("opacity", 0)
-      .transition()
-      .duration(200)
-      .ease(d3.easeCubic)
-      .attr("opacity", 1);
+      .attr("fill", (node: CommitNode) => getNodeGradient(node.color))
+      .attr("stroke", (node: CommitNode) => darken(node.color, 0.8))
+      .attr("stroke-width", 2)
+      .style("filter", (node: CommitNode) => `drop-shadow(0 0 8px ${getGlow(node.color, 0.6)}) drop-shadow(0 0 2px rgba(0,0,0,0.6))`);
+
+    nodeEnter
+      .append("circle")
+      .attr("class", "node-center")
+      .attr("r", NODE_RADIUS / 2)
+      .attr("cx", 0)
+      .attr("cy", 0)
+      .attr("fill", (node: CommitNode) => brighten(node.color, 1.6))
+      .attr("opacity", 0.9)
+      .style("filter", "drop-shadow(0 1px 1px rgba(0,0,0,0.3))");
+
+    nodeEnter
+      .append("circle")
+      .attr("class", "node-highlight")
+      .attr("r", NODE_RADIUS / 2.5)
+      .attr("cx", -NODE_RADIUS * 0.25)
+      .attr("cy", -NODE_RADIUS * 0.25)
+      .attr("fill", "rgba(255,255,255,0.5)")
+      .attr("opacity", 0.8);
 
     // Halo de sélection
     nodeEnter
       .append("circle")
-      .attr("r", NODE_RADIUS + 3)
+      .attr("r", NODE_RADIUS + 4)
       .attr("cx", 0)
       .attr("cy", 0)
       .attr("fill", "transparent")
@@ -741,7 +918,7 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
         }
         return "transparent";
       })
-      .attr("stroke-width", 1)
+      .attr("stroke-width", 2)
       .attr("opacity", (node: CommitNode) => {
         if (node.hash === selectedCommit || selectedCommits.includes(node.hash)) {
           return 0.3;
@@ -750,55 +927,124 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
           return 0.2;
         }
         return 0;
-      });
+      })
+      .style("filter", (node: CommitNode) => `drop-shadow(0 0 6px ${getGlow(node.color, 0.4)})`);
 
-    const textGroup = nodeEnter.append("g").attr("transform", `translate(${NODE_RADIUS + 12}, 0)`);
+    const iconGroup = nodeEnter
+      .append("g")
+      .attr("class", "commit-icon")
+      .style("pointer-events", "none")
+      .style("filter", "drop-shadow(0 1px 1px rgba(0,0,0,0.3))")
+      .attr("fill", "#ffffff")
+      .attr("stroke", "#ffffff")
+      .attr("stroke-width", 1.2);
 
-    // Branch labels displayed inline before commit message
-    const branchGroups = textGroup
+    iconGroup.each(function (node: CommitNode) {
+      const group = d3.select(this);
+      const iconSize = 10;
+      if (node.parents.length > 1) {
+        group
+          .append("circle")
+          .attr("r", 2.4)
+          .attr("cx", -2.5)
+          .attr("cy", -2.5);
+        group
+          .append("circle")
+          .attr("r", 2.4)
+          .attr("cx", 2.5)
+          .attr("cy", 2.5);
+        group
+          .append("line")
+          .attr("x1", -1)
+          .attr("y1", -1)
+          .attr("x2", 1)
+          .attr("y2", 1);
+        return;
+      }
+
+      if (node.hash === headCommitHash) {
+        group
+          .append("path")
+          .attr("d", `M-${iconSize / 2},-${iconSize / 3} L${iconSize / 3},-${iconSize / 3} L${iconSize / 2},0 L${iconSize / 3},${iconSize / 3} L-${iconSize / 2},${iconSize / 3} Z`);
+        return;
+      }
+
+      if (node.branches.length > 0) {
+        group
+          .append("circle")
+          .attr("r", 2.2)
+          .attr("cx", -3.5)
+          .attr("cy", 0);
+        group
+          .append("line")
+          .attr("x1", -1)
+          .attr("y1", 0)
+          .attr("x2", 2.5)
+          .attr("y2", 0);
+        group
+          .append("circle")
+          .attr("r", 2.2)
+          .attr("cx", 4)
+          .attr("cy", 0);
+      }
+    });
+
+    const textGroup = nodeEnter.append("g").attr("transform", `translate(${NODE_RADIUS + 14}, 0)`);
+
+    // Branch labels displayed in the left column
+    const branchLabelGroup = nodeEnter
       .filter((node: CommitNode) => node.branches.length > 0)
       .append("g")
       .attr("class", "branch-labels")
+      .attr("transform", (node: CommitNode) => `translate(${-laneX(node.lane) + 10}, 0)`)
       .style("pointer-events", "none");
 
-    branchGroups.each(function(node: CommitNode) {
+    branchLabelGroup.each(function(node: CommitNode) {
       const group = d3.select(this);
       const currentBranchName = currentBranch?.name;
       
-      // Display branches inline with badges
-      let xOffset = 0;
+      let localYOffset = 0;
       node.branches.forEach((branch, index) => {
-        const isCurrent = branch === currentBranchName;
-        const textWidth = branch.length * 6.5 + 10;
+        if (index > 0) return; // Only show first branch per commit to avoid overlap in restricted height, or stack them?
+        // If we want to support multiple branches per commit, we might need to stack them upwards/downwards or comma separate.
+        // For now, let's just pick the first one or distinct ones.
         
-        // Background rectangle (badge style) - no fill to avoid hiding graph lines
-        group.append("rect")
-          .attr("x", xOffset)
-          .attr("y", -8)
-          .attr("width", textWidth)
-          .attr("height", 16)
-          .attr("fill", "none")
-          .attr("rx", 3)
-          .attr("stroke", isCurrent ? "#06b6d4" : "#475569")
-          .attr("stroke-width", 1)
-          .attr("stroke-opacity", isCurrent ? 0.8 : 0.4);
+        const isCurrent = branch === currentBranchName;
+        const labelHeight = 24;
+        const fontSize = 11;
+        const labelColor = node.color;
+        
+        // Background
+        const textWidth = branch.length * 7;
+        const padding = 24;
+        const width = textWidth + padding;
 
-        // Branch text
-        group.append("text")
-          .attr("class", "commit-branches")
-          .attr("fill", isCurrent ? "#06b6d4" : "#94a3b8")
-          .attr("font-size", 10)
-          .attr("font-weight", isCurrent ? 600 : 500)
-          .attr("x", xOffset + 5)
-          .attr("y", 0)
+        group
+          .append("path") // Tag shape
+          .attr("d", `M0,${-labelHeight/2} H${width} q3,0 3,3 v${labelHeight-6} q0,3 -3,3 H0 v-${labelHeight} z`)
+          .attr("fill", isCurrent ? "#0ea5e9" : "#1e293b")
+          .attr("stroke", isCurrent ? "#38bdf8" : labelColor)
+          .attr("stroke-width", 1.5);
+
+        // Icon
+        group
+          .append("circle")
+          .attr("cx", 12)
+          .attr("cy", 0)
+          .attr("r", 3)
+          .attr("fill", isCurrent ? "#fff" : labelColor);
+
+        // Text
+        group
+          .append("text")
+          .attr("x", 22)
+          .attr("y", 1)
           .attr("dominant-baseline", "middle")
+          .attr("fill", isCurrent ? "#fff" : "#cbd5e1")
+          .attr("font-size", fontSize)
+          .attr("font-weight", 600)
           .text(branch);
-
-        xOffset += textWidth + 4;
       });
-
-      // Store total width for message offset
-      group.attr("data-width", xOffset);
     });
 
     const messageText = textGroup
@@ -820,12 +1066,7 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
       })
       .attr("y", 0)
       .attr("dominant-baseline", "middle")
-      .attr("x", (node: CommitNode) => {
-        // Offset message after branch labels
-        if (node.branches.length === 0) return 0;
-        const totalWidth = node.branches.reduce((acc, branch) => acc + branch.length * 6.5 + 14, 0);
-        return totalWidth;
-      })
+      .attr("x", (node: CommitNode) => messageColumnX - laneX(node.lane) - (NODE_RADIUS + 14))
       .text((node: CommitNode) => node.message);
 
     messageText
@@ -839,6 +1080,7 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
     graph,
     headCommitHash,
     layout.height,
+    layout.laneCount,
     layout.width,
     nodeIndexMap,
     resolveCheckoutBranch,
@@ -861,7 +1103,10 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
   }
 
   return (
-    <div className="flex h-full flex-1 flex-col bg-slate-900">
+    <div
+      className="flex h-full flex-1 flex-col"
+      style={{ background: "linear-gradient(180deg, #1a1d23 0%, #1e2127 100%)" }}
+    >
       {currentBranch && !isMultiSelectActive && (
         <div className="flex items-center justify-center px-4 pt-4">
           <div className="pointer-events-auto flex w-[min(320px,92%)] items-center gap-2 rounded-2xl border border-slate-700/70 bg-slate-900/95 px-4 py-3 text-xs text-slate-200 shadow-2xl backdrop-blur">
@@ -873,9 +1118,23 @@ Assurez-vous d'avoir une sauvegarde avant de continuer.`,
           </div>
         </div>
       )}
+
+      {/* Header Row */}
+      <div className="flex w-full shrink-0 select-none items-center border-b border-slate-800 bg-[#16181d] text-[10px] font-bold uppercase tracking-wider text-slate-500 shadow-sm" style={{ paddingLeft: MARGIN.left }}>
+        <div className="flex h-8 items-center" style={{ width: BRANCH_COLUMN_WIDTH }}>
+          Branch / Tag
+        </div>
+        <div className="flex h-8 items-center justify-center" style={{ width: layout.laneCount * LANE_WIDTH + MESSAGE_COLUMN_GAP }}>
+          Graph
+        </div>
+        <div className="flex h-8 flex-1 items-center">
+          Commit Message
+        </div>
+      </div>
+
       <div
         ref={containerCallbackRef}
-        className="relative flex-1 overflow-auto bg-slate-900"
+        className="relative flex-1 overflow-auto"
         onScroll={handleScroll}
         onContextMenu={(event) => {
           if (!event.defaultPrevented) {

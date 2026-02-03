@@ -24,7 +24,7 @@ const RepoView: React.FC = () => {
   }
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[280px,1fr,380px] overflow-hidden bg-slate-900">
+    <div className="grid h-full min-h-0 grid-cols-[240px,minmax(400px,1fr),300px] overflow-hidden bg-slate-900">
       <Sidebar />
       <main className="flex h-full min-h-0 flex-col overflow-hidden bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
